@@ -1,0 +1,5 @@
+datasets/
+*.sh
+test.*
+.env
+**/outputs/**
