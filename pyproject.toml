@@ -18,6 +18,9 @@ dependencies = [
     "accelerate",
     "pillow",
     "torchvision",
+    "scipy",
+    "scikit-learn",
+    "matplotlib",
     "triton @ file:/work/gh35/h35008/triton/python",
 ]
 

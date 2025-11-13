@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 AESTHETIC_ATTRIBUTES = [
+    "score",
     "BalacingElements",
     "ColorHarmony",
     "Content",
@@ -19,7 +20,6 @@ AESTHETIC_ATTRIBUTES = [
 @dataclass
 class AADBItem:
     image_path: str
-    score: float
     attributes: Dict[str, float]
 
 def get_aadb_dataset(
@@ -49,7 +49,7 @@ def get_aadb_dataset(
     split_name = split_map[split]
     
     # Read all attributes and the overall score
-    all_attributes = ["score"] + AESTHETIC_ATTRIBUTES
+    all_attributes = AESTHETIC_ATTRIBUTES
     attribute_data = {}
 
     for attribute in all_attributes:
@@ -67,10 +67,9 @@ def get_aadb_dataset(
     dataset = []
     for image_name in image_names:
         image_path = os.path.abspath(os.path.join(dataset_dir, "datasetImages_originalSize", image_name))
-        score = attribute_data["score"][image_name]
         attributes = {attr: attribute_data[attr][image_name] for attr in AESTHETIC_ATTRIBUTES}
         
-        dataset.append(AADBItem(image_path=image_path, score=score, attributes=attributes))
+        dataset.append(AADBItem(image_path=image_path, attributes=attributes))
 
     return dataset
 

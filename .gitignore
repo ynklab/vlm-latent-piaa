@@ -2,4 +2,7 @@ datasets/
 *.sh
 test.*
 .env
-**/outputs/**
+outputs/
+viz/
+__pycache__/
+logs/
