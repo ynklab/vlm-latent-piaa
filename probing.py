@@ -21,7 +21,7 @@ except Exception:
 warnings.filterwarnings("ignore", category=ConstantInputWarning)
 
 from utils.aadb import get_aadb_dataset, AESTHETIC_ATTRIBUTES
-from utils.qwen3vl_embed import load_qwen3vl, build_inputs, extract_all_pools
+from utils.mm_embed import load_mm_model, build_inputs, extract_all_pools
 
 def _rng_choice(seq, n, seed=0):
     if n is None or n >= len(seq): return list(seq)
@@ -184,7 +184,7 @@ def main():
     te_paths, te_targets = _items_to_paths_and_targets(te_items)
 
     # 2) モデル
-    model, processor = load_qwen3vl(args.model_id, args.dtype, args.device_map, args.attn_impl)
+    model, processor = load_mm_model(args.model_id, args.dtype, args.device_map, args.attn_impl)
     model.eval()
 
     # 3) 特徴抽出
