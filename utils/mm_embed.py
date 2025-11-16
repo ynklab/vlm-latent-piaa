@@ -82,9 +82,8 @@ def _pool_tokenish(x: torch.Tensor) -> Optional[torch.Tensor]:
     elif t.dim() == 4:
         t = t.movedim(1, -1).reshape(t.size(0), -1, t.size(-1)); vec = t.mean(dim=1).mean(dim=0)
     elif t.dim() == 3:
-        if t.size(-1) < t.size(1):
-            t = t.movedim(1, -1)
-        vec = t.mean(dim=1).mean(dim=0)
+        # 3Dは [B, N, D] 想定
+        vec = t.mean(dim=1).mean(dim=0)  # トークン平均→バッチ平均
     elif t.dim() == 2:
         vec = t.mean(dim=0)
     else:
