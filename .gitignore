@@ -6,3 +6,4 @@ outputs/
 viz/
 __pycache__/
 logs/
+runs/

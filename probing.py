@@ -23,6 +23,35 @@ warnings.filterwarnings("ignore", category=ConstantInputWarning)
 from utils.aadb import get_aadb_dataset, AESTHETIC_ATTRIBUTES
 from utils.mm_embed import load_mm_model, build_inputs, extract_all_pools
 
+def make_prompt(mode: str) -> str:
+    if mode == "base":
+        # 現在のベースライン
+        return "Assess the aesthetics of this image."
+
+    elif mode == "format":
+        # 数値だけを 1〜5 で出力するよう強く指定
+        return (
+            "Assess the aesthetics of this image. "
+            "Please rate it on a scale from 1 to 5. "
+            "Output only the numeric score, and do not output any other text."
+        )
+
+    elif mode == "attributes":
+        # 属性名を列挙して、属性を意識させるプロンプト
+        attrs = ", ".join(AESTHETIC_ATTRIBUTES)
+        return (
+            "Assess the aesthetics of this image with respect to the following attributes: "
+            f"{attrs}. "
+            "You do not need to output the attributes explicitly; just use them as internal criteria."
+        )
+
+    elif mode == "unrelated":
+        # IAA と無関係なプロンプト
+        return "Describe the weather today in one sentence."
+
+    else:
+        raise ValueError(f"Unknown prompt_mode: {mode}")
+
 def _rng_choice(seq, n, seed=0):
     if n is None or n >= len(seq): return list(seq)
     rng = random.Random(seed)
@@ -162,7 +191,12 @@ def main():
     ap.add_argument("--dtype", default="auto")
     ap.add_argument("--device_map", default="auto")
     ap.add_argument("--attn_impl", default=None)
-    ap.add_argument("--prompt", default="Assess the aesthetics of this image.")
+    ap.add_argument(
+        "--prompt_mode",
+        default="base",
+        choices=["base", "format", "attributes", "unrelated"],
+        help="Use prompt presets for prompt sensitivity experiments."
+    )
     ap.add_argument("--out_json", default="probe_aadb_results.json")
     # ← 追加：定数入力のロギング
     ap.add_argument("--log_constant", default=None, help="定数入力を検知したとき JSONL に追記するパス（省略時はロギング無し）")
@@ -201,7 +235,8 @@ def main():
         all_pools = []
         for p in tqdm(paths, desc=f"Extract[{split_name}]", leave=False):
             img = Image.open(p).convert("RGB")
-            inputs = build_inputs(processor, img, args.prompt)
+            prompt = make_prompt(args.prompt_mode)
+            inputs = build_inputs(processor, img, prompt)
             pools = extract_all_pools(model, inputs)
             all_pools.append(pools)
 
@@ -235,7 +270,7 @@ def main():
             "train_split": args.train_split,
             "val_split": args.val_split,
             "test_split": args.test_split,
-            "prompt": args.prompt,
+            "prompt_mode": args.prompt_mode,
             "quick": args.quick,
             "seed": args.seed,
         },

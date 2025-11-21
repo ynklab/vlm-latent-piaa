@@ -147,14 +147,20 @@ def main():
             print(f"[viz] Skip (load error): {fp} -> {e}")
             continue
 
-        model_id = results.get("config", {}).get("model_id") or os.path.splitext(os.path.basename(fp))[0]
-        model_dir = os.path.join(args.out_dir, sanitize(model_id))
+        cfg = results.get("config", {})
+        prompt_mode = cfg.get("prompt_mode", "base")   # ★ ここで取得
+        model_id = cfg.get("model_id") or os.path.splitext(os.path.basename(fp))[0]
+
+        # prompt_mode / model_id の順でサブディレクトリを作る
+        prompt_dir = sanitize(prompt_mode)
+        model_dir = os.path.join(args.out_dir, prompt_dir, sanitize(model_id))
+
         sources = collect_sources(results)
         if not sources:
             print(f"[viz] No sources found in: {fp}")
             continue
 
-        # Build a stable color for each attribute across all plots for this model
+        # 属性名→色の割当（モデル単位で固定）
         attr_names = sorted(list(results.get("attrs", {}).keys()))
         colors = pick_distinct_colors(len(attr_names), palette=args.palette)
         attr2color = {a: c for a, c in zip(attr_names, colors)}
