@@ -4,6 +4,7 @@ test.*
 .env
 outputs/
 viz/
+viz_hists/
 __pycache__/
 logs/
 runs/
