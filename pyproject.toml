@@ -12,6 +12,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "albumentations",
+    "opencv-python-headless",
     "torch==2.6.0+cu126",
     "transformers",
     "datasets",
