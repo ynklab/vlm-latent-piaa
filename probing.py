@@ -20,10 +20,11 @@ except Exception:
 # 既定でこの警告は非表示に
 warnings.filterwarnings("ignore", category=ConstantInputWarning)
 
-from utils.aadb import get_aadb_dataset, AESTHETIC_ATTRIBUTES
+from utils.para import get_para_dataset, AESTHETIC_ATTRIBUTES as PARA_ATTRS
+from utils.aadb import get_aadb_dataset, AESTHETIC_ATTRIBUTES as AADB_ATTRS
 from utils.mm_embed import load_mm_model, build_inputs, extract_all_pools
 
-def make_prompt(mode: str) -> str:
+def make_prompt(mode: str, attrs: list[str]) -> str:
     if mode == "base":
         # 現在のベースライン
         return "Assess the aesthetics of this image."
@@ -38,7 +39,7 @@ def make_prompt(mode: str) -> str:
 
     elif mode == "attributes":
         # 属性名を列挙して、属性を意識させるプロンプト
-        attrs = ", ".join(AESTHETIC_ATTRIBUTES)
+        attrs = ", ".join(attrs)
         return (
             "Assess the aesthetics of this image with respect to the following attributes: "
             f"{attrs}. "
@@ -58,9 +59,9 @@ def _rng_choice(seq, n, seed=0):
     idx = list(range(len(seq))); rng.shuffle(idx); idx = idx[:n]
     return [seq[i] for i in idx]
 
-def _items_to_paths_and_targets(items) -> Tuple[List[str], Dict[str, List[float]]]:
+def _items_to_paths_and_targets(items, attrs) -> Tuple[List[str], Dict[str, List[float]]]:
     paths = [it.image_path for it in items]
-    targets = {attr: [it.attributes[attr] for it in items] for attr in AESTHETIC_ATTRIBUTES}
+    targets = {attr: [it.attributes[attr] for it in items] for attr in attrs}
     return paths, targets
 
 def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
@@ -202,20 +203,35 @@ def main():
     ap.add_argument("--log_constant", default=None, help="定数入力を検知したとき JSONL に追記するパス（省略時はロギング無し）")
     ap.add_argument("--constant_tol", type=float, default=1e-8, help="定数判定の標準偏差しきい値")
     ap.add_argument("--debug_feature_var", action="store_true", help="定数発生時に特徴量の分散合計も記録")
+    ap.add_argument(
+        "--dataset",
+        default="aadb",
+        choices=["aadb", "para"],
+        help="Which aesthetics dataset to use: AADB or PARA."
+    )
     args = ap.parse_args()
+    # ここから追加
+    if args.dataset == "aadb":
+        get_dataset = get_aadb_dataset
+        ATTRS = AADB_ATTRS
+    elif args.dataset == "para":
+        get_dataset = get_para_dataset
+        ATTRS = PARA_ATTRS
+    else:
+        raise ValueError(f"Unknown dataset: {args.dataset}")
 
     # 1) データ
-    tr_items = get_aadb_dataset(args.train_split, dataset_dir=args.dataset_dir)
-    va_items = get_aadb_dataset(args.val_split,   dataset_dir=args.dataset_dir)
-    te_items = get_aadb_dataset(args.test_split,  dataset_dir=args.dataset_dir)
+    tr_items = get_dataset(args.train_split, dataset_dir=args.dataset_dir)
+    va_items = get_dataset(args.val_split,   dataset_dir=args.dataset_dir)
+    te_items = get_dataset(args.test_split,  dataset_dir=args.dataset_dir)
     if args.quick is not None:
         tr_items = _rng_choice(tr_items, args.quick, args.seed)
         va_items = _rng_choice(va_items, args.quick, args.seed+1)
         te_items = _rng_choice(te_items, args.quick, args.seed+2)
 
-    tr_paths, tr_targets = _items_to_paths_and_targets(tr_items)
-    va_paths, va_targets = _items_to_paths_and_targets(va_items)
-    te_paths, te_targets = _items_to_paths_and_targets(te_items)
+    tr_paths, tr_targets = _items_to_paths_and_targets(tr_items, ATTRS)
+    va_paths, va_targets = _items_to_paths_and_targets(va_items, ATTRS)
+    te_paths, te_targets = _items_to_paths_and_targets(te_items, ATTRS)
 
     # 2) モデル
     model, processor = load_mm_model(args.model_id, args.dtype, args.device_map, args.attn_impl)
@@ -235,7 +251,7 @@ def main():
         all_pools = []
         for p in tqdm(paths, desc=f"Extract[{split_name}]", leave=False):
             img = Image.open(p).convert("RGB")
-            prompt = make_prompt(args.prompt_mode)
+            prompt = make_prompt(args.prompt_mode, ATTRS)
             inputs = build_inputs(processor, img, prompt)
             pools = extract_all_pools(model, inputs)
             all_pools.append(pools)
@@ -267,6 +283,7 @@ def main():
     results = {
         "config": {
             "model_id": args.model_id,
+            "dataset": args.dataset,
             "train_split": args.train_split,
             "val_split": args.val_split,
             "test_split": args.test_split,
@@ -277,7 +294,7 @@ def main():
         "attrs": {},
     }
 
-    for attr in tqdm(AESTHETIC_ATTRIBUTES, desc="Attributes"):
+    for attr in tqdm(ATTRS, desc="Attributes"):
         ytr = np.array(tr_targets[attr], dtype=np.float32)
         yva = np.array(va_targets[attr], dtype=np.float32)
         yte = np.array(te_targets[attr], dtype=np.float32)

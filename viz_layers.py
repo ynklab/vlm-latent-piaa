@@ -148,13 +148,13 @@ def main():
             continue
 
         cfg = results.get("config", {})
-        prompt_mode = cfg.get("prompt_mode", "base")   # ★ ここで取得
-        model_id = cfg.get("model_id") or os.path.splitext(os.path.basename(fp))[0]
+        prompt_mode = cfg.get("prompt_mode", "unknown_prompt")
+        dataset     = cfg.get("dataset", "unknown_dataset")   # ★ 追加
+        model_id    = cfg.get("model_id") or os.path.splitext(os.path.basename(fp))[0]
 
-        # prompt_mode / model_id の順でサブディレクトリを作る
-        prompt_dir = sanitize(prompt_mode)
-        model_dir = os.path.join(args.out_dir, prompt_dir, sanitize(model_id))
-
+        prompt_dir  = sanitize(prompt_mode)
+        dataset_dir = sanitize(dataset)                       # ★ 追加
+        model_dir   = os.path.join(args.out_dir, dataset_dir, prompt_dir, sanitize(model_id))
         sources = collect_sources(results)
         if not sources:
             print(f"[viz] No sources found in: {fp}")
