@@ -5,6 +5,9 @@ test.*
 outputs/
 viz/
 viz_hists/
+viz_aug/
+viz_aug_samples/
+viz_aug_layers/
 __pycache__/
 logs/
 runs/
