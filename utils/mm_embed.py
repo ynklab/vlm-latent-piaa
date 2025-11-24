@@ -5,7 +5,8 @@ from PIL import Image
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 import numpy as np
-from transformers import AutoProcessor, AutoModelForCausalLM
+from transformers import AutoProcessor, AutoModelForCausalLM, AutoImageProcessor, AutoModel
+from tqdm import tqdm
 try:
     from transformers import Qwen3VLForConditionalGeneration as _QWEN_CLASS
 except Exception:
@@ -270,3 +271,141 @@ def extract_all_pools(model, inputs: Dict[str, torch.Tensor], processor=None) ->
         bridge_text=[bridge_text_vec],
         bridge_visual=[bridge_visual_vec],
     )
+
+# ============================================================
+# DINOv3 Vision-only モデル用ヘルパ（例: facebook/dinov3-vitb16-pretrain-lvd1689m）
+# ============================================================
+
+def load_dinov3_model(
+    model_id: str = "facebook/dinov3-vitb16-pretrain-lvd1689m",
+    dtype: str = "auto",
+    device: Optional[str] = None,
+):
+    """
+    DINOv3-B/16 などの Vision-only モデルをロードするヘルパ。
+    戻り値: (model, image_processor, device)
+    """
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    if dtype == "auto":
+        if torch.cuda.is_available():
+            torch_dtype = torch.float16
+        else:
+            torch_dtype = torch.float32
+    else:
+        # dtype に 'float32' / 'float16' などを渡せるように
+        torch_dtype = getattr(torch, dtype)
+
+    # Vision-only モデルなので AutoModel でOK
+    model = AutoModel.from_pretrained(
+        model_id,
+        torch_dtype=torch_dtype,
+        trust_remote_code=True,
+    )
+    model.to(device)
+    model.eval()
+
+    image_processor = AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
+    return model, image_processor, device
+
+
+@torch.inference_mode()
+def extract_dinov3_pooler_features(
+    model,
+    image_processor,
+    device: str,
+    image_paths: List[str],
+) -> np.ndarray:
+    """
+    DINOv3 の pooler_output（なければ last_hidden_state の global average）を
+    [N, D] の numpy 配列として返す。
+    """
+    feats = []
+    for p in image_paths:
+        img = Image.open(p).convert("RGB")
+        inputs = image_processor(images=img, return_tensors="pt")
+        # AutoImageProcessor の戻り値は通常 {"pixel_values": [B,3,H,W]}
+        if "pixel_values" not in inputs:
+            raise RuntimeError(f"Processor outputs have no 'pixel_values' key for image: {p}")
+        pixel_values = inputs["pixel_values"].to(device)
+
+        outputs = model(pixel_values=pixel_values)
+
+        # DINOv3Model は通常 BaseModelOutputWithPooling を返し、pooler_output を持つ
+        if hasattr(outputs, "pooler_output") and outputs.pooler_output is not None:
+            emb = outputs.pooler_output  # [B, D]
+        else:
+            # 念のためフォールバック: last_hidden_state を global average
+            if not hasattr(outputs, "last_hidden_state") or outputs.last_hidden_state is None:
+                raise RuntimeError("DINOv3 model outputs have neither pooler_output nor last_hidden_state")
+            h = outputs.last_hidden_state  # [B, N, D] or [B, D]
+            if h.dim() == 3:
+                emb = h.mean(dim=1)  # [B, D]
+            else:
+                emb = h
+        emb = emb.detach().to(torch.float32).cpu().numpy()  # [B,D]
+        feats.append(emb[0])
+
+    return np.stack(feats, axis=0)  # [N, D]
+
+# すでにあるインポートに AutoImageProcessor, AutoModel を追加済みと仮定
+# from transformers import AutoProcessor, AutoModelForCausalLM, AutoImageProcessor, AutoModel
+# ・・・
+# load_dinov3_model / extract_dinov3_pooler_features は既に定義済みとする
+
+@torch.inference_mode()
+def extract_dinov3_all_layer_features(
+    model,
+    image_processor,
+    device: str,
+    image_paths: List[str],
+) -> List[np.ndarray]:
+    """
+    DINOv3 (例: facebook/dinov3-vitb16-pretrain-lvd1689m) の全レイヤー hidden_states を取得し，
+    各レイヤーごとに global pooling（パッチ平均→バッチ平均）した [N, D] の特徴行列を返す。
+
+    戻り値:
+      feats_per_layer: List[np.ndarray] で長さ = #layers+1（embedding層＋各Encoder層）
+                       feats_per_layer[i] の shape は [N, D]
+    """
+    feats_per_layer = None  # List[List[np.ndarray]]
+    for p in tqdm(image_paths, desc="Extract DINOv3 all layers"):
+        img = Image.open(p).convert("RGB")
+        inputs = image_processor(images=img, return_tensors="pt")
+        if "pixel_values" not in inputs:
+            raise RuntimeError(f"DINOv3 processor outputs have no 'pixel_values' key for {p}")
+        pixel_values = inputs["pixel_values"].to(device)
+
+        # 全レイヤーの hidden states を取得
+        outputs = model(pixel_values=pixel_values, output_hidden_states=True, return_dict=True)
+        if not hasattr(outputs, "hidden_states") or outputs.hidden_states is None:
+            raise RuntimeError("DINOv3 model did not return hidden_states. Set output_hidden_states=True.")
+
+        hs = outputs.hidden_states  # tuple(len = n_layers+1), 各 [B, N, D] or [B, D]
+        per_image_vecs = []
+        for h in hs:
+            if h.dim() == 3:
+                # [B, N, D] -> パッチ平均 → [B, D]
+                v = h.mean(dim=1)
+            elif h.dim() == 2:
+                # [B, D]
+                v = h
+            else:
+                # 想定外の形状は落としてしまう
+                v = h.view(h.size(0), -1)
+            # バッチ平均（通常 B=1 だが一般化しておく）
+            v = v.mean(dim=0)  # [D]
+            per_image_vecs.append(v.detach().to(torch.float32).cpu().numpy())
+
+        if feats_per_layer is None:
+            feats_per_layer = [[] for _ in range(len(per_image_vecs))]
+        for li, vec in enumerate(per_image_vecs):
+            feats_per_layer[li].append(vec)
+
+    if feats_per_layer is None:
+        raise RuntimeError("No features were extracted from DINOv3 model. Check inputs.")
+
+    # [num_images, D] にまとめる
+    feats_per_layer = [np.stack(layer_list, axis=0) for layer_list in feats_per_layer]
+    return feats_per_layer
