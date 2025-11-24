@@ -23,14 +23,16 @@ SCORE_ATTRIBUTES = {
     "contentScore_mean": "content",
 }
 
+
 @dataclass
 class PARAItem:
     image_path: str
     score: float
     attributes: Dict[str, float]
 
+
 def get_para_dataset(
-    split: str,
+    split: str | None,
     dataset_dir: str = "datasets/PARA",
 ) -> List[PARAItem]:
     """
@@ -44,15 +46,28 @@ def get_para_dataset(
         A list of PARAItem objects, each containing the image path, overall score,
         and a dictionary of aesthetic attribute scores.
     """
-    if split not in ["train", "test"]:
-        raise ValueError(f"Invalid split: {split}. PARA dataset only supports 'train' and 'test'.")
+    if split is None:
+        train_data = _load_split_data("train", dataset_dir)
+        test_data = _load_split_data("test", dataset_dir)
+        return train_data + test_data
+    elif split in ["train", "test"]:
+        return _load_split_data(split, dataset_dir)
+    else:
+        raise ValueError(
+            f"Invalid split: {split}. PARA dataset only supports 'train', 'test', or None."
+        )
 
+
+def _load_split_data(
+    split: str,
+    dataset_dir: str,
+) -> List[PARAItem]:
     split_map = {
         "train": "Train",
         "test": "Test",
     }
     split_name = split_map[split]
-    
+
     csv_file = f"PARA-Giaa{split_name}.csv"
     csv_path = os.path.join(dataset_dir, "annotation", csv_file)
 
@@ -62,26 +77,36 @@ def get_para_dataset(
     for _, row in df.iterrows():
         session_id = row["sessionId"]
         image_name = row["imageName"]
-        image_path = os.path.abspath(os.path.join(dataset_dir, "imgs", session_id, image_name))
-        
+        image_path = os.path.abspath(
+            os.path.join(dataset_dir, "imgs", session_id, image_name)
+        )
+
         score = row["aestheticScore_mean"]
-        
-        attributes = {new_name: row[original_name] for original_name, new_name in SCORE_ATTRIBUTES.items()}
-        
-        dataset.append(PARAItem(image_path=image_path, score=score, attributes=attributes))
+
+        attributes = {
+            new_name: row[original_name]
+            for original_name, new_name in SCORE_ATTRIBUTES.items()
+        }
+
+        dataset.append(
+            PARAItem(image_path=image_path, score=score, attributes=attributes)
+        )
 
     return dataset
 
+
 if __name__ == "__main__":
     # Example usage:
-    for split in ["train", "test"]:
-        print(f"--- {split} ---")
+    for split_option in ["train", "test", None]:
+        print(f"--- {split_option} ---")
         try:
-            dataset = get_para_dataset(split)
+            dataset = get_para_dataset(split_option)
             print(f"Loaded {len(dataset)} items.")
 
             # Print the first 5 entries
-            for i in range(5):
+            for i in range(min(5, len(dataset))):
                 print(dataset[i])
         except FileNotFoundError:
-            print(f"Dataset files not found for split '{split}'. Please check the path.")
+            print(
+                f"Dataset files not found for split '{split_option}'. Please check the path."
+            )
