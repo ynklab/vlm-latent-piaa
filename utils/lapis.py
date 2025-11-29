@@ -81,7 +81,7 @@ def _load_split_data(
         image_path = os.path.abspath(
             os.path.join(dataset_dir, "images", image_filename)
         )
-        score = row["mean_response"]
+        score = (row["mean_response"] / 100) * 4 + 1
 
         dataset.append(
             LAPISItem(
@@ -162,7 +162,7 @@ def get_personalized_lapis_dataset(
                         image_path=row["image_path"],
                         image_id=row["image_id"],
                         user_id=row["participant_id"],
-                        score=row["rating"],
+                        score=(row["rating"] / 100) * 4 + 1,
                     )
                 )
             return items
