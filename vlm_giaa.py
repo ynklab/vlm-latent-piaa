@@ -2,45 +2,40 @@
 # -*- coding: utf-8 -*-
 
 """
-Use a multimodal LLM (Gemma 3 or Qwen3-VL) to compute General Image Aesthetic Assessment (GIAA)
-scores for all PARA images (train + test).
+Compute General Image Aesthetic Assessment (GIAA) scores for image datasets
+using multimodal VLMs (Gemma3, Qwen3-VL).
 
-- Prompt: format prompt
+Supported datasets:
+  - PARA  (utils.para.get_para_dataset)
+  - LAPIS (utils.lapis.get_lapis_dataset)
 
-    "Assess the overall aesthetic quality of this image. "
-    "Please rate it on a scale from 1 to 5. "
-    "Output only the numeric score, and do not output any other text."
+For each image:
+  - Ask the VLM to rate its overall aesthetics from 1 to 5 (may be decimal).
+  - Parse the numeric score from the output.
+  - Save results to a CSV:
 
-- 出力: CSV with columns: model_id, split, image_path, giaa, raw_output
-  ※ split は PARA 側で train/test が消えているので "all" 固定。
+      model_id, dataset, split, image_path, giaa, raw_output
 
-- モデル:
-    --gemma_model_id (例: google/gemma-3-4b-it)
-    --qwen_model_id  (例: Qwen/Qwen3-VL-2B-Instruct)
+Notes:
+  - split is "all" in both datasets (we load all splits at once).
+  - `giaa` is float, can be e.g. 3.5.
 
-- 決定的な出力:
-    do_sample=False, temperature=0.0, num_beams=1 で Greedy デコード。
+Example usage:
 
-- Quick モード:
-    --quick N で、全画像のうち最大 N 枚だけ評価する（train/test 合算）。
-
-Usage examples:
-
-  python vlm_giaa_para.py \
+  # PARA, Gemma3
+  python vlm_giaa.py \
+    --dataset para \
     --gemma_model_id google/gemma-3-4b-it \
     --dataset_dir datasets/PARA \
     --out_csv runs/giaa_gemma3_4b_para.csv
 
-  python vlm_giaa_para.py \
+  # LAPIS, Qwen3-VL
+  python vlm_giaa.py \
+    --dataset lapis \
     --qwen_model_id Qwen/Qwen3-VL-2B-Instruct \
-    --dataset_dir datasets/PARA \
-    --out_csv runs/giaa_qwen3vl2b_para.csv
-
-  python vlm_giaa_para.py \
-    --gemma_model_id google/gemma-3-4b-it \
-    --qwen_model_id Qwen/Qwen3-VL-2B-Instruct \
-    --dataset_dir datasets/PARA \
-    --out_csv runs/giaa_gemma_qwen_para.csv
+    --dataset_dir datasets/LAPIS \
+    --out_csv runs/giaa_qwen3vl2b_lapis.csv \
+    --quick 100
 """
 
 import os
@@ -56,9 +51,11 @@ from PIL import Image
 from tqdm import tqdm
 
 import torch
-from transformers import AutoProcessor, AutoModelForCausalLM, Qwen3VLForConditionalGeneration
+from transformers import AutoProcessor, AutoModelForCausalLM
+from transformers import Qwen3VLForConditionalGeneration
 
-from utils.para import get_para_dataset  # utils/para.py 前提
+from utils.para import get_para_dataset
+from utils.lapis import get_lapis_dataset
 
 
 # ---------- FORMAT Prompt（統一） ----------
@@ -82,10 +79,10 @@ def set_seed(seed: int = 42):
 
 def build_inputs(processor, image: Image.Image, prompt: str, device: torch.device):
     """
-    Build chat-style inputs with image + text using processor.apply_chat_template.
+    画像＋テキストを Processor の chat_template でまとめてモデル入力を作る。
 
     想定:
-      - Gemma 3 (google/gemma-3-*-it)
+      - Gemma3 (google/gemma-3-*-it)
       - Qwen3-VL (Qwen/Qwen3-VL-*-Instruct)
     """
     messages = [
@@ -106,13 +103,13 @@ def build_inputs(processor, image: Image.Image, prompt: str, device: torch.devic
     inputs = processor.apply_chat_template(
         messages,
         tokenize=True,
-        add_generation_prompt=True,  # assistant ターンを挿入
+        add_generation_prompt=True,  # assistant ターンを入れる
         return_tensors="pt",
         return_dict=True,
     )
 
     model_inputs = {k: v.to(device) for k, v in inputs.items()}
-    model_inputs.pop("token_type_ids", None)
+    model_inputs.pop("token_type_ids", None)  # Qwen系で付いてくる場合は削除
     return model_inputs
 
 
@@ -131,32 +128,27 @@ def parse_float_from_text(text: str) -> float:
         return math.nan
 
 
-def run_giaa_for_all(
+def run_giaa_for_items(
     model,
     processor,
     device,
-    dataset_dir: str,
+    items,
     prompt: str,
     quick: int | None = None,
 ):
     """
-    PARA の train/test をまとめて (get_para_dataset(None)) 読み込み，
-    全画像に対して GIAA を実行する。
-
-    戻り値:
-      rows: List[dict] with keys: image_path, split="all", giaa, raw_output
+    items: list of objects with .image_path attribute (PARAItem / LAPISItem)
+    Returns: list of dict {image_path, giaa, raw_output}
     """
-    items = get_para_dataset(None, dataset_dir=dataset_dir)  # train+test 全件
-    print(f"[info] total PARA items (train+test) = {len(items)}")
-
     if quick is not None and quick < len(items):
         rng = np.random.RandomState(123)
         idx = rng.choice(len(items), size=quick, replace=False)
         items = [items[i] for i in idx]
-        print(f"[info] quick mode: using {len(items)} samples out of all images")
+        print(f"[info] quick mode: using {len(items)} samples out of {len(idx)}")
 
     rows = []
-    for item in tqdm(items, desc="GIAA [all]"):
+
+    for item in tqdm(items, desc="GIAA[all]"):
         img = Image.open(item.image_path).convert("RGB")
         inputs = build_inputs(processor, img, prompt, device)
 
@@ -182,7 +174,6 @@ def run_giaa_for_all(
         rows.append(
             {
                 "image_path": item.image_path,
-                "split": "all",  # train/test の区別は get_para_dataset(None) では失われている
                 "giaa": score,
                 "raw_output": text,
             }
@@ -196,39 +187,61 @@ def run_giaa_for_all(
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument(
+        "--dataset",
+        required=True,
+        choices=["para", "lapis"],
+        help="Dataset to run on (para or lapis).",
+    )
+    ap.add_argument(
         "--gemma_model_id",
-        help="Gemma 3 model id (e.g. google/gemma-3-4b-it)",
+        help="Gemma 3 model id (e.g. google/gemma-3-4b-it).",
     )
     ap.add_argument(
         "--qwen_model_id",
-        help="Qwen3-VL model id (e.g. Qwen/Qwen3-VL-2B-Instruct)",
+        help="Qwen3-VL model id (e.g. Qwen/Qwen3-VL-2B-Instruct).",
     )
     ap.add_argument(
         "--dataset_dir",
-        default="datasets/PARA",
-        help="Path to PARA dataset root",
+        default=None,
+        help="Path to dataset root. If None, use defaults (datasets/PARA or datasets/LAPIS).",
     )
     ap.add_argument(
         "--out_csv",
         required=True,
-        help="Path to output CSV",
+        help="Path to output CSV.",
     )
     ap.add_argument(
         "--seed",
         type=int,
         default=42,
-        help="Random seed for reproducibility",
+        help="Random seed for sampling in quick mode.",
     )
     ap.add_argument(
         "--quick",
         type=int,
         default=None,
-        help="If set, evaluate at most N images (train+test combined) for each model (debug mode).",
+        help="If set, evaluate at most N images (all splits combined) for each model (debug mode).",
     )
     args = ap.parse_args()
 
     set_seed(args.seed)
 
+    # デフォルトの dataset_dir を決める
+    if args.dataset_dir is None:
+        if args.dataset == "para":
+            args.dataset_dir = "datasets/PARA"
+        else:
+            args.dataset_dir = "datasets/LAPIS"
+
+    # データ読み込み (all splits)
+    if args.dataset == "para":
+        items = get_para_dataset(None, dataset_dir=args.dataset_dir)
+    else:
+        items = get_lapis_dataset(None, dataset_dir=args.dataset_dir)
+
+    print(f"[info] dataset={args.dataset}, dir={args.dataset_dir}, total_items={len(items)}")
+
+    # どのモデルを走らせるか
     model_ids: List[tuple[str, str]] = []
     if args.gemma_model_id:
         model_ids.append(("gemma", args.gemma_model_id))
@@ -238,14 +251,14 @@ def main():
     if not model_ids:
         raise ValueError("Please specify at least one of --gemma_model_id or --qwen_model_id")
 
-    all_rows: List[dict] = []
+    all_rows = []
 
     for family, mid in model_ids:
         print(f"[info] loading model: {mid}")
         device_str = "cuda" if torch.cuda.is_available() else "cpu"
 
         if family == "qwen":
-            # Qwen3-VL は専用クラスでロードする必要がある
+            # Qwen3-VL は専用クラスでロード
             model = Qwen3VLForConditionalGeneration.from_pretrained(
                 mid,
                 torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
@@ -253,7 +266,6 @@ def main():
                 trust_remote_code=True,
             )
         else:
-            # Gemma3 など他の CausalLM 系は AutoModelForCausalLM でOK
             model = AutoModelForCausalLM.from_pretrained(
                 mid,
                 torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
@@ -263,29 +275,38 @@ def main():
 
         processor = AutoProcessor.from_pretrained(mid, trust_remote_code=True)
         model.eval()
-
         device = model.device if hasattr(model, "device") else torch.device(device_str)
 
-        rows = run_giaa_for_all(
+        rows = run_giaa_for_items(
             model=model,
             processor=processor,
             device=device,
-            dataset_dir=args.dataset_dir,
+            items=items,
             prompt=FORMAT_PROMPT,
             quick=args.quick,
         )
-        for row in rows:
-            row["model_id"] = mid
-            all_rows.append(row)
+
+        for r in rows:
+            all_rows.append(
+                {
+                    "model_id": mid,
+                    "dataset": args.dataset,
+                    "split": "all",
+                    "image_path": r["image_path"],
+                    "giaa": r["giaa"],
+                    "raw_output": r["raw_output"],
+                }
+            )
+
     # CSV 保存
     out_path = args.out_csv
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    fieldnames = ["model_id", "split", "image_path", "giaa", "raw_output"]
+    fieldnames = ["model_id", "dataset", "split", "image_path", "giaa", "raw_output"]
     with open(out_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
         for row in all_rows:
-            writer.writerow(row)
+            w.writerow(row)
 
     print(f"[done] wrote {len(all_rows)} rows to {out_path}")
 
