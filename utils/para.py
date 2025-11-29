@@ -141,11 +141,11 @@ def get_personalized_para_dataset(
     get_para_dataset and uses PARA-Images.csv as its source.
 
     Three groups are returned for each user:
-    1. support_small: 5 images
-    2. support_large: 20 images
-    3. test: 10 images
+    1. support_small: 10 images
+    2. support_large: 100 images
+    3. test: 50 images
 
-    Users with fewer than 35 images are skipped.
+    Users with fewer than 160 images are skipped.
 
     Args:
         seed: The random seed for shuffling and selection.
@@ -155,93 +155,92 @@ def get_personalized_para_dataset(
         A dictionary where keys are user IDs and values are PersonalizedPARA objects,
         each containing support and test sets for that user.
     """
-    all_data = _load_personalized_data(dataset_dir)
+    df = _load_personalized_data(dataset_dir)
 
-    user_data = defaultdict(list)
-    for item in all_data:
-        user_data[item.user_id].append(item)
-
-    user_ids = list(user_data.keys())
-    rng = random.Random(seed)
-    rng.shuffle(user_ids)
-
-    personalized_dataset = {}
+    # Get user counts and filter for users with enough images
+    user_counts = df["userId"].value_counts()
     num_support_small = 10
     num_support_large = 100
     num_test = 50
     total_required = num_support_small + num_support_large + num_test
+    valid_users = user_counts[user_counts >= total_required].index.tolist()
 
-    selected_users = 0
-    for user_id in user_ids:
-        if selected_users >= 200:
-            break
+    # Sample 200 users
+    rng = random.Random(seed)
+    if len(valid_users) >= 200:
+        selected_user_ids = rng.sample(valid_users, 200)
+    else:
+        selected_user_ids = valid_users
+        rng.shuffle(selected_user_ids)
 
-        images = user_data[user_id]
-        if len(images) < total_required:
-            continue
+    # Filter the main DataFrame to only include selected users
+    user_df = df[df["userId"].isin(selected_user_ids)]
 
-        rng.shuffle(images)
+    personalized_dataset = {}
 
-        support_small_set = images[:num_support_small]
-        support_large_set = images[
+    # Group by user and create the splits
+    grouped = user_df.groupby("userId")
+
+    for user_id, user_group_df in tqdm(grouped, desc="Processing users"):
+        # Shuffle and split the user's DataFrame
+        shuffled_group = user_group_df.sample(frac=1, random_state=seed)
+
+        support_small_df = shuffled_group.iloc[:num_support_small]
+        support_large_df = shuffled_group.iloc[
             num_support_small : num_support_small + num_support_large
         ]
-        test_set = images[
+        test_df = shuffled_group.iloc[
             num_support_small + num_support_large : num_support_small
             + num_support_large
             + num_test
         ]
 
+        # Convert DataFrame rows to PersonalizedPARAItem objects for the splits
+        def df_to_items(split_df: pd.DataFrame) -> List[PersonalizedPARAItem]:
+            items = []
+            for _, row in split_df.iterrows():
+                attributes = {
+                    new_name: row[original_name]
+                    for original_name, new_name in PERSONALIZED_SCORE_ATTRIBUTES.items()
+                }
+                items.append(
+                    PersonalizedPARAItem(
+                        image_path=row["image_path"],
+                        user_id=row["userId"],
+                        score=row["aestheticScore"],
+                        attributes=attributes,
+                    )
+                )
+            return items
+
         personalized_dataset[user_id] = PersonalizedPARA(
-            support_small=support_small_set,
-            support_large=support_large_set,
-            test=test_set,
+            support_small=df_to_items(support_small_df),
+            support_large=df_to_items(support_large_df),
+            test=df_to_items(test_df),
         )
-        selected_users += 1
 
     return personalized_dataset
 
 
 def _load_personalized_data(
     dataset_dir: str,
-) -> List[PersonalizedPARAItem]:
+) -> pd.DataFrame:
     csv_file = "PARA-Images.csv"
     csv_path = os.path.join(dataset_dir, "annotation", csv_file)
 
     df = pd.read_csv(csv_path)
 
-    dataset = []
+    # Skip rows with missing scores
     score_cols = list(PERSONALIZED_SCORE_ATTRIBUTES.keys())
+    df.dropna(subset=score_cols, inplace=True)
 
-    for _, row in tqdm(df.iterrows(), total=df.shape[0]):
-        # Skip rows with missing scores
-        if row[score_cols].isnull().any():
-            continue
+    # Construct image_path using vectorized operations
+    base_img_path = os.path.abspath(os.path.join(dataset_dir, "imgs"))
+    df["image_path"] = (
+        base_img_path + os.sep + df["sessionId"] + os.sep + df["imageName"]
+    )
 
-        user_id = row["userId"]
-        session_id = row["sessionId"]
-        image_name = row["imageName"]
-        image_path = os.path.abspath(
-            os.path.join(dataset_dir, "imgs", session_id, image_name)
-        )
-
-        score = row["aestheticScore"]
-
-        attributes = {
-            new_name: row[original_name]
-            for original_name, new_name in PERSONALIZED_SCORE_ATTRIBUTES.items()
-        }
-
-        dataset.append(
-            PersonalizedPARAItem(
-                image_path=image_path,
-                user_id=user_id,
-                score=score,
-                attributes=attributes,
-            )
-        )
-
-    return dataset
+    return df
 
 
 if __name__ == "__main__":
