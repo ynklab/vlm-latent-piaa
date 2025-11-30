@@ -2,27 +2,34 @@
 # -*- coding: utf-8 -*-
 
 """
-Visualize layerwise performance for residual_linear grid PIAA experiments.
+Visualize layerwise performance for linear PIAA models (residual / direct) on PARA/LAPIS.
 
 Input:
-  - A directory containing CSVs produced by piaa_from_giaa_para.py / train_residual_linear_grid_piaa.py
+  - A directory containing CSVs produced by:
+      - train_residual_linear_grid_piaa.py
+      - train_direct_linear_grid_piaa.py
     Each CSV must have columns:
 
       user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
 
-    For grid runs, method is of the form:
-      residual_linear_<feature_source>_L<layer_idx>
+    method には例えば以下のような形式を想定:
+      - residual_linear_<feature_source>_L<layer>
+      - direct_linear_<feature_source>_L<layer>
+      - residual_linear_giaa_gt_<feature_source>_L<layer>
+      - direct_linear_giaa_gt_<feature_source>_L<layer>
 
 Output:
-  - For each (model_id, feature_source), this script creates line charts:
+  - For each (model_id, family, feature_source), this script creates line charts:
 
-      <out_dir>/<sanitize(model_id)>__<feature_source>__rho_layers.png
-      <out_dir>/<sanitize(model_id)>__<feature_source>__r2_layers.png
+      <out_dir>/<sanitize(model_id)>__<family>__<feature_source>__rho_layers.png
+      <out_dir>/<sanitize(model_id)>__<family>__<feature_source>__r2_layers.png
 
     where:
-      x-axis: layer index
-      y-axis: mean per-user metric (rho or r2)
-      one line per support_set (e.g., small / large), if available.
+      - family: e.g. residual_linear, direct_linear, residual_linear_giaa_gt, ...
+      - feature_source: e.g. llm_text, vision, bridge_visual
+      - x-axis: layer index
+      - y-axis: mean per-user metric (rho or r2)
+      - one line per support_set (small / large / etc), if available.
 """
 
 import os
@@ -145,39 +152,63 @@ def compute_per_user_metrics(df_all: pd.DataFrame, min_items: int = 2) -> pd.Dat
     return df_user
 
 
-def parse_method_residual_linear(method: str):
+def parse_method(method: str):
     """
-    method から (feature_source, layer_idx) を抽出する。
-    想定形式: residual_linear_<feature_source>_L<layer_idx>
-    feature_source 自体に '_' を含みうるため、正規表現で最後の '_L<digit>' を探す。
+    method 文字列から (family, feature_source, layer_idx) を抽出する。
+
+    family:
+      - residual_linear
+      - direct_linear
+      - residual_linear_giaa_gt
+      - direct_linear_giaa_gt
+      など，接頭辞部分。
+
+    想定形式:
+      residual_linear_<source>_L<layer>
+      direct_linear_<source>_L<layer>
+      residual_linear_giaa_gt_<source>_L<layer>
+      direct_linear_giaa_gt_<source>_L<layer>
     """
-    m = re.match(r"^residual_linear_(.+)_L(\d+)$", method)
-    if not m:
-        return None, None
-    feature_source = m.group(1)
-    layer_idx = int(m.group(2))
-    return feature_source, layer_idx
+    # まず giaa_gt 付き
+    m = re.match(r"^(residual_linear_giaa_gt|direct_linear_giaa_gt)_(.+)_L(\d+)$", method)
+    if m:
+        family = m.group(1)
+        feature_source = m.group(2)
+        layer_idx = int(m.group(3))
+        return family, feature_source, layer_idx
+
+    # 通常版
+    m = re.match(r"^(residual_linear|direct_linear)_(.+)_L(\d+)$", method)
+    if m:
+        family = m.group(1)
+        feature_source = m.group(2)
+        layer_idx = int(m.group(3))
+        return family, feature_source, layer_idx
+
+    return None, None, None
 
 
 # ---------- Plotting ----------
 
-def plot_layerwise_for_model_source(
+def plot_layerwise_for_model_source_family(
     df_summary: pd.DataFrame,
     model_id: str,
+    family: str,
     feature_source: str,
     metric: str,
     out_path: str,
     figsize=(10, 6),
     dpi: int = 160,
-):
+) -> bool:
     """
     df_summary: summary rows with columns:
-      model_id, support_set, feature_source, layer_idx, mean_rho, mean_r2, ...
-    For given model_id & feature_source, plots mean metric vs layer_idx,
+      model_id, family, support_set, feature_source, layer_idx, mean_rho, mean_r2, ...
+    For given (model_id, family, feature_source), plots mean metric vs layer_idx,
     with one line per support_set (small / large / etc).
     """
     df_m = df_summary[
         (df_summary["model_id"] == model_id) &
+        (df_summary["family"] == family) &
         (df_summary["feature_source"] == feature_source)
     ].copy()
     if df_m.empty:
@@ -186,7 +217,6 @@ def plot_layerwise_for_model_source(
     plt.close("all")
     fig, ax = plt.subplots(figsize=figsize)
 
-    # support_set ごとにラインを引く
     support_sets = sorted(df_m["support_set"].unique())
     cmap = plt.get_cmap("tab10")
 
@@ -210,10 +240,9 @@ def plot_layerwise_for_model_source(
 
     ax.set_xlabel("Layer index")
     ax.set_ylabel(metric.upper())
-    ax.set_title(f"{model_id} | {feature_source} | mean {metric}")
+    ax.set_title(f"{model_id} | {family} | {feature_source} | mean {metric}")
     ax.grid(True, linestyle="--", alpha=0.3)
 
-    # x 軸は整数の layer index
     all_layers = sorted(df_m["layer_idx"].unique())
     ax.set_xticks(all_layers)
 
@@ -232,7 +261,7 @@ def main():
     ap.add_argument(
         "--input_dir",
         required=True,
-        help="Directory containing PIAA baseline CSVs (from residual_linear grid script).",
+        help="Directory containing PIAA baseline CSVs (from residual/direct linear grid scripts).",
     )
     ap.add_argument(
         "--out_dir",
@@ -258,19 +287,20 @@ def main():
     df_user = compute_per_user_metrics(df_all, min_items=args.min_items_per_user)
     print(f"[info] per-user rows = {len(df_user)}")
 
-    # 2) Summary: (model_id, support_set, method) -> mean_rho, mean_r2
+    # 2) Summary: (model_id, support_set, method) -> family, feature_source, layer_idx, mean_rho, mean_r2
     grouped = df_user.groupby(["model_id", "support_set", "method"])
     rows = []
     for (model_id, support_set, method), g in grouped:
-        feat_src, layer_idx = parse_method_residual_linear(method)
-        if feat_src is None:
-            # skip non-grid methods (e.g. raw, bias, mlp, etc.)
+        family, feat_src, layer_idx = parse_method(method)
+        if family is None:
+            # raw / bias / MLP など grid 以外の手法はここでスキップ
             continue
         mean_rho = g["rho"].mean()
         mean_r2 = g["r2"].mean()
         rows.append(
             {
                 "model_id": model_id,
+                "family": family,
                 "support_set": support_set,
                 "method": method,
                 "feature_source": feat_src,
@@ -282,39 +312,42 @@ def main():
 
     df_summary = pd.DataFrame(rows)
     if df_summary.empty:
-        print("[warn] no residual_linear_* methods found in df_user; nothing to plot.")
+        print("[warn] no residual/direct linear grid methods found in df_user; nothing to plot.")
         return
 
-    # 3) For each (model_id, feature_source), plot mean rho / r2 vs layer index
+    # 3) For each (model_id, family, feature_source), plot mean rho / r2 vs layer index
     for model_id in df_summary["model_id"].unique():
-        for feat_src in df_summary[
-            df_summary["model_id"] == model_id
-        ]["feature_source"].unique():
-            # rho
-            out_rho = os.path.join(
-                args.out_dir,
-                f"{sanitize(model_id)}__{feat_src}__rho_layers.png",
-            )
-            plot_layerwise_for_model_source(
-                df_summary=df_summary,
-                model_id=model_id,
-                feature_source=feat_src,
-                metric="rho",
-                out_path=out_rho,
-            )
+        df_m = df_summary[df_summary["model_id"] == model_id]
+        for family in df_m["family"].unique():
+            df_f = df_m[df_m["family"] == family]
+            for feat_src in df_f["feature_source"].unique():
+                # rho
+                out_rho = os.path.join(
+                    args.out_dir,
+                    f"{sanitize(model_id)}__{sanitize(family)}__{feat_src}__rho_layers.png",
+                )
+                plot_layerwise_for_model_source_family(
+                    df_summary=df_summary,
+                    model_id=model_id,
+                    family=family,
+                    feature_source=feat_src,
+                    metric="rho",
+                    out_path=out_rho,
+                )
 
-            # r2
-            out_r2 = os.path.join(
-                args.out_dir,
-                f"{sanitize(model_id)}__{feat_src}__r2_layers.png",
-            )
-            plot_layerwise_for_model_source(
-                df_summary=df_summary,
-                model_id=model_id,
-                feature_source=feat_src,
-                metric="r2",
-                out_path=out_r2,
-            )
+                # r2
+                out_r2 = os.path.join(
+                    args.out_dir,
+                    f"{sanitize(model_id)}__{sanitize(family)}__{feat_src}__r2_layers.png",
+                )
+                plot_layerwise_for_model_source_family(
+                    df_summary=df_summary,
+                    model_id=model_id,
+                    family=family,
+                    feature_source=feat_src,
+                    metric="r2",
+                    out_path=out_r2,
+                )
 
     print("[done] layerwise visualization finished.")
 
