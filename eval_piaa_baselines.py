@@ -342,6 +342,7 @@ def plot_box_for_model(
         for i, box in enumerate(bp["boxes"]):
             box.set_facecolor(cmap(i / max(1, len(data_list))))
 
+        ax.set_xticklabels(labels, rotation=30, ha="right")
         ax.set_ylabel(metric)
         ax.set_title(f"{model_id} | per-user {metric} distribution")
         ax.grid(True, linestyle="--", alpha=0.3)
