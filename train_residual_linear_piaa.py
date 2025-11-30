@@ -4,19 +4,30 @@
 """
 Train per-user residual linear models (Ridge) for PIAA on PARA using mm_embed features.
 
-For each user u:
-  - We have support set S_u (support_small or support_large) and test set T_u from get_personalized_para_dataset.
-  - For each image i:
-      GIAA_pred(i)   : precomputed GIAA prediction (from vlm_giaa_para.py).
-      user_score_i   : user-specific aesthetic score.
-      feature z_i    : mm_embed feature from a chosen source/layer.
-  - Target residual:
-      r_i = user_score_i - GIAA_pred(i)
-  - We fit a Ridge regression r ~ z on the support set.
-  - On the test set, PIAA_pred(i) = GIAA_pred(i) + Ridge(z_i).
+Residual 定義:
+  target_score を
+    - piaa   : user_score (個人 PIAA)
+    - giaa_gt: データセットの GIAA 平均 (aestheticScore_mean)
+  としたとき、
 
-Outputs a CSV with one row per user × test image:
+    residual = target_score - GIAA_pred
+
+  をターゲットに Ridge 回帰を行い、
+  test では
+    PIAA_pred = GIAA_pred + residual_pred
+  として最終予測を得る。
+
+これにより、
+  - target_score = piaa   の場合: 個人好みを反映した残差学習
+  - target_score = giaa_gtの場合: global GIAA を補正する残差学習
+を同一スクリプトで比較できる。
+
+出力:
   user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
+
+method 名:
+  - piaa   : residual_linear_<source>_L<layer>          （従来と同じ）
+  - giaa_gt: residual_linear_giaa_gt_<source>_L<layer> （区別できるように prefix を付与）
 """
 
 import os
@@ -34,7 +45,7 @@ from sklearn.linear_model import RidgeCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
-from utils.para import get_personalized_para_dataset
+from utils.para import get_personalized_para_dataset, get_para_dataset
 from utils.mm_embed import load_mm_model, build_inputs, extract_all_pools
 
 
@@ -77,8 +88,8 @@ def load_giaa_map(
     """
     Read GIAA CSV and build a dict: image_path -> giaa (float).
 
-    Expected columns in CSV (from vlm_giaa_para.py):
-      model_id, split, image_path, giaa, raw_output
+    Expected columns in CSV (from vlm_giaa.py):
+      model_id, dataset, split, image_path, giaa, raw_output
 
     If model_id_filter is given, only that model_id is used.
     If not, CSV must contain exactly one model_id.
@@ -156,7 +167,7 @@ def main():
     ap.add_argument(
         "--giaa_csv",
         required=True,
-        help="Path to GIAA prediction CSV (from vlm_giaa_para.py).",
+        help="Path to GIAA prediction CSV (from vlm_giaa.py).",
     )
     ap.add_argument(
         "--dataset_dir",
@@ -211,6 +222,15 @@ def main():
         help="Random seed for get_personalized_para_dataset (must match when generating splits).",
     )
     ap.add_argument(
+        "--target_score",
+        default="piaa",
+        choices=["piaa", "giaa_gt"],
+        help=(
+            "Which score to use as ground truth for residual: "
+            "'piaa' (user_score) or 'giaa_gt' (dataset-level mean aestheticScore_mean)."
+        ),
+    )
+    ap.add_argument(
         "--quick",
         type=int,
         default=None,
@@ -223,24 +243,33 @@ def main():
     )
     args = ap.parse_args()
 
-    # 1) Load GIAA map
+    # 1) Load GIAA predicted map
     image_to_giaa, giaa_model_id = load_giaa_map(args.giaa_csv, args.model_id_filter)
     print(f"[info] using GIAA model_id={giaa_model_id}, entries={len(image_to_giaa)}")
 
-    # 2) Load personalized PARA dataset
+    # 2) Load dataset-level GIAA ground truth if needed
+    image_to_giaa_gt: Dict[str, float] = {}
+    if args.target_score == "giaa_gt":
+        print("[info] loading dataset-level GIAA ground truth from PARA-Giaa*.csv ...")
+        gt_items = get_para_dataset(None, dataset_dir=args.dataset_dir)
+        for it in gt_items:
+            image_to_giaa_gt[it.image_path] = float(it.score)
+        print(f"[info] GIAA ground truth entries: {len(image_to_giaa_gt)}")
+
+    # 3) Load personalized PARA dataset
     print("[info] loading personalized PARA dataset...")
     personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
     all_user_ids = sorted(personalized.keys())
     print(f"[info] num users in personalized dataset: {len(all_user_ids)}")
 
-    # quick: limit number of users
+    # quick: limit users
     if args.quick is not None and args.quick < len(all_user_ids):
         user_ids = all_user_ids[:args.quick]
         print(f"[info] quick mode: using first {len(user_ids)} users out of {len(all_user_ids)}")
     else:
         user_ids = all_user_ids
 
-    # 3) Collect all image_paths for selected users
+    # 4) Collect all image_paths for selected users
     all_paths = set()
     for user_id in user_ids:
         pdata = personalized[user_id]
@@ -248,7 +277,7 @@ def main():
             all_paths.add(item.image_path)
     print(f"[info] total unique images in selected users' splits: {len(all_paths)}")
 
-    # 4) Load VLM for mm_embed features
+    # 5) Load VLM for mm_embed features
     print(f"[info] loading VLM for features: {args.model_id}")
     model, processor = load_mm_model(args.model_id, dtype="auto", device_map="auto", attn_impl=None)
     model.eval()
@@ -256,28 +285,27 @@ def main():
     prompt = make_prompt(args.prompt_mode)
     print(f"[info] prompt_mode={args.prompt_mode}, prompt={prompt!r}")
 
-    # 5) Precompute features for all relevant images
-    feat_cache: Dict[str, np.ndarray] = {}
-    print("[info] extracting features for all selected images...")
+    # 6) Precompute AllPools
+    pools_cache: Dict[str, object] = {}
+    print("[info] extracting AllPools for all selected images...")
     for path in tqdm(sorted(all_paths), desc="Embed"):
         if path not in image_to_giaa:
             continue
         img = Image.open(path).convert("RGB")
         inputs = build_inputs(processor, img, prompt)
         pools = extract_all_pools(model, inputs, processor=processor)
-        try:
-            vec = extract_feature_vector(pools, args.feature_source, args.feature_layer)
-        except IndexError:
-            raise IndexError(
-                f"feature_layer={args.feature_layer} is out of range for source={args.feature_source} "
-                f"(check number of layers for this model/source)."
-            )
-        feat_cache[path] = vec
-    print(f"[info] feature cache size: {len(feat_cache)} (images with both GIAA and features)")
+        pools_cache[path] = pools
+    print(f"[info] pools cache size: {len(pools_cache)} (images with both GIAA and features)")
 
-    # 6) Per-user training (Ridge) and prediction
+    if not pools_cache:
+        raise RuntimeError("No images with both GIAA and features. Check giaa_csv / dataset_dir / seed.")
+
+    # 7) Per-user RidgeCV training and test prediction
     rows: List[dict] = []
-    method_name = f"residual_linear_{args.feature_source}_L{args.feature_layer}"
+    if args.target_score == "piaa":
+        method_name = f"residual_linear_{args.feature_source}_L{args.feature_layer}"
+    else:  # giaa_gt
+        method_name = f"residual_linear_giaa_gt_{args.feature_source}_L{args.feature_layer}"
 
     for user_id in tqdm(user_ids, desc="Users"):
         pdata = personalized[user_id]
@@ -292,22 +320,39 @@ def main():
         y_support = []
         for item in support_items:
             path = item.image_path
-            if path not in image_to_giaa or path not in feat_cache:
+            if path not in image_to_giaa or path not in pools_cache:
                 continue
-            giaa = image_to_giaa[path]
+            giaa_pred = image_to_giaa[path]
             user_score = float(item.score)
-            residual = user_score - giaa
-            X_support.append(feat_cache[path])
+
+            if args.target_score == "piaa":
+                target_score = user_score
+            else:  # giaa_gt
+                if path not in image_to_giaa_gt:
+                    continue
+                target_score = image_to_giaa_gt[path]
+
+            residual = target_score - giaa_pred
+
+            pools = pools_cache[path]
+            try:
+                feat = extract_feature_vector(pools, args.feature_source, args.feature_layer)
+            except IndexError:
+                raise IndexError(
+                    f"feature_layer={args.feature_layer} is out of range for source={args.feature_source} "
+                    f"(check number of layers for this model/source)."
+                )
+
+            X_support.append(feat)
             y_support.append(residual)
 
         X_support = np.array(X_support, dtype=np.float32)
         y_support = np.array(y_support, dtype=np.float32)
 
         if len(y_support) < 2:
-            # not enough support points to train; skip this user
+            # Not enough support points; skip this user
             continue
 
-        # Fit RidgeCV on support
         pipe = make_pipeline(
             StandardScaler(with_std=True),
             RidgeCV(alphas=np.logspace(-3, 3, 13))
@@ -317,12 +362,17 @@ def main():
         # Predict on test set
         for item in test_items:
             path = item.image_path
-            if path not in image_to_giaa or path not in feat_cache:
+            if path not in image_to_giaa or path not in pools_cache:
                 continue
-            giaa = image_to_giaa[path]
-            z = feat_cache[path][None, :]
+            giaa_pred = image_to_giaa[path]
+            user_score = float(item.score)
+
+            pools = pools_cache[path]
+            feat = extract_feature_vector(pools, args.feature_source, args.feature_layer)
+            z = feat[None, :]
             residual_pred = pipe.predict(z)[0]
-            piaa_pred = giaa + residual_pred
+            piaa_pred = giaa_pred + residual_pred
+
             rows.append(
                 {
                     "user_id": user_id,
@@ -330,13 +380,13 @@ def main():
                     "model_id": args.model_id,
                     "support_set": args.support_set,
                     "method": method_name,
-                    "giaa": giaa,
+                    "giaa": giaa_pred,
                     "piaa_pred": piaa_pred,
-                    "user_score": float(item.score),
+                    "user_score": user_score,
                 }
             )
 
-    # 7) Save CSV
+    # 8) Save CSV
     out_path = args.out_csv
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fieldnames = [

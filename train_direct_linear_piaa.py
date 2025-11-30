@@ -4,26 +4,31 @@
 """
 Train per-user direct linear models (Ridge) for PIAA on PARA/LAPIS using mm_embed features.
 
-目的:
-  - モデルの GIAA 予測を使わずに，
-    VLM の埋め込み z から直接ユーザーのスコア y を予測するベースラインを作る。
-  - 残差回帰 (user_score - GIAA) と比較して，
-    「GIAA をバックボーンとして使う価値」がどの程度あるかを検証する。
+For each user u:
+  - We have support set S_u (support_small or support_large) and test set T_u
+    from get_personalized_*_dataset.
+  - For each image i:
+      feature z_i    : mm_embed feature from a chosen source/layer.
+      user_score_i   : user-specific aesthetic score (PIAA).
+      giaa_gt_i      : dataset-level GIAA mean (optional, if available).
+  - Depending on --target_score:
 
-各ユーザー u について:
-  - support セット S_u (support_small or support_large) と test セット T_u を personalized データから取得。
-  - 各画像 i について:
-      user_score_i   : user-specific aesthetic score (1〜5スケール)
-      feature z_i    : mm_embed の指定 source/layer から得た特徴ベクトル
-  - 直接回帰:
-      y_i = user_score_i
-      y_i ≈ w^T z_i + b
-  - Ridge 回帰 (per-user) を support セットで学習し，
-    test セットの PIAA_pred(u,i) = w^T z_i + b を出力する。
+    target_score = "piaa"   : use user_score_i as ground truth.
+    target_score = "giaa_gt": use dataset-level GIAA mean as ground truth.
 
-出力:
-  - CSV: user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
-    ※ giaa はここでは使わないので NaN を入れておく。
+    We train a Ridge regression:
+      target_score ~ z
+
+  - For evaluation and output, we always log:
+      user_score_i (PIAA)
+      piaa_pred = model(z_i)   # predicted target_score (piaa or giaa_gt)
+
+Outputs a CSV with one row per user × test image:
+  user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
+
+method 名:
+  - target_score = piaa   : direct_linear_<source>_L<layer>
+  - target_score = giaa_gt: direct_linear_giaa_gt_<source>_L<layer>
 """
 
 import os
@@ -41,8 +46,8 @@ from sklearn.linear_model import RidgeCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
-from utils.para import get_personalized_para_dataset
-from utils.lapis import get_personalized_lapis_dataset
+from utils.para import get_personalized_para_dataset, get_para_dataset
+from utils.lapis import get_personalized_lapis_dataset, get_lapis_dataset
 from utils.mm_embed import load_mm_model, build_inputs, extract_all_pools
 
 
@@ -165,6 +170,15 @@ def main():
         help="Random seed for personalized split (must match when generating splits).",
     )
     ap.add_argument(
+        "--target_score",
+        default="piaa",
+        choices=["piaa", "giaa_gt"],
+        help=(
+            "Which score to use as ground truth for direct regression: "
+            "'piaa' (user_score) or 'giaa_gt' (dataset-level GIAA mean)."
+        ),
+    )
+    ap.add_argument(
         "--quick",
         type=int,
         default=None,
@@ -201,7 +215,19 @@ def main():
     else:
         user_ids = all_user_ids
 
-    # 2) 対象ユーザに出現する全画像パスを収集
+    # 2) dataset-level GIAA ground truth を読み込み（必要なら）
+    image_to_giaa_gt: Dict[str, float] = {}
+    if args.target_score == "giaa_gt":
+        print(f"[info] loading dataset-level GIAA ground truth for {args.dataset.upper()} ...")
+        if args.dataset == "para":
+            gt_items = get_para_dataset(None, dataset_dir=args.dataset_dir)
+        else:
+            gt_items = get_lapis_dataset(None, dataset_dir=args.dataset_dir)
+        for it in gt_items:
+            image_to_giaa_gt[it.image_path] = float(it.score)
+        print(f"[info] GIAA ground truth entries: {len(image_to_giaa_gt)}")
+
+    # 3) 対象ユーザに出現する全画像パスを収集
     all_paths = set()
     for user_id in user_ids:
         pdata = personalized[user_id]
@@ -209,7 +235,7 @@ def main():
             all_paths.add(item.image_path)
     print(f"[info] total unique images in selected users' splits: {len(all_paths)}")
 
-    # 3) mm_embed 用の VLM ロード
+    # 4) mm_embed 用の VLM ロード
     print(f"[info] loading VLM for features: {args.model_id}")
     model, processor = load_mm_model(args.model_id, dtype="auto", device_map="auto", attn_impl=None)
     model.eval()
@@ -217,7 +243,7 @@ def main():
     prompt = make_prompt(args.prompt_mode)
     print(f"[info] prompt_mode={args.prompt_mode}, prompt={prompt!r}")
 
-    # 4) AllPools を全画像についてキャッシュ
+    # 5) AllPools を全画像についてキャッシュ
     pools_cache: Dict[str, object] = {}
     print("[info] extracting AllPools for all selected images...")
     for path in tqdm(sorted(all_paths), desc="Embed"):
@@ -230,9 +256,12 @@ def main():
     if not pools_cache:
         raise RuntimeError("No features extracted. Check dataset_dir / seed / model.")
 
-    # 5) ユーザごとに RidgeCV を train し test に適用
+    # 6) ユーザごとに RidgeCV を train し test に適用
     rows: List[dict] = []
-    method_name = f"direct_linear_{args.feature_source}_L{args.feature_layer}"
+    if args.target_score == "piaa":
+        method_name = f"direct_linear_{args.feature_source}_L{args.feature_layer}"
+    else:
+        method_name = f"direct_linear_giaa_gt_{args.feature_source}_L{args.feature_layer}"
 
     for user_id in tqdm(user_ids, desc="Users"):
         pdata = personalized[user_id]
@@ -257,9 +286,18 @@ def main():
                     f"feature_layer={args.feature_layer} is out of range for source={args.feature_source} "
                     f"(check number of layers for this model/source)."
                 )
+
             user_score = float(item.score)
+            if args.target_score == "piaa":
+                target = user_score
+            else:
+                if path not in image_to_giaa_gt:
+                    # データセット平均がない画像はスキップ
+                    continue
+                target = image_to_giaa_gt[path]
+
             X_support.append(feat)
-            y_support.append(user_score)
+            y_support.append(target)
 
         X_support = np.array(X_support, dtype=np.float32)
         y_support = np.array(y_support, dtype=np.float32)
@@ -268,7 +306,6 @@ def main():
             # 学習に十分なサンプルがないユーザはスキップ
             continue
 
-        # RidgeCV で直接回帰 y ~ z
         pipe = make_pipeline(
             StandardScaler(with_std=True),
             RidgeCV(alphas=np.logspace(-3, 3, 13))
@@ -284,6 +321,8 @@ def main():
             feat = extract_feature_vector(pools, args.feature_source, args.feature_layer)
             z = feat[None, :]  # [1,D]
             piaa_pred = pipe.predict(z)[0]
+            # 評価用に always user_score をログしておく
+            user_score = float(item.score)
             rows.append(
                 {
                     "user_id": user_id,
@@ -291,13 +330,13 @@ def main():
                     "model_id": args.model_id,
                     "support_set": args.support_set,
                     "method": method_name,
-                    "giaa": math.nan,             # GIAA は使っていないので NaN
+                    "giaa": math.nan,        # direct モデルなので GIAA予測は使わない
                     "piaa_pred": piaa_pred,
-                    "user_score": float(item.score),
+                    "user_score": user_score,
                 }
             )
 
-    # 6) CSV 保存
+    # 7) CSV 保存
     out_path = args.out_csv
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fieldnames = [
