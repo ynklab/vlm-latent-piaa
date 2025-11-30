@@ -2,19 +2,31 @@
 # -*- coding: utf-8 -*-
 
 """
-Train per-user residual linear models (Ridge) for PIAA on PARA using mm_embed features,
+Train per-user residual linear models (Ridge) for PIAA on PARA/LAPIS using mm_embed features,
 for ALL (feature_source, feature_layer) combinations in a single run.
 
-- 先に personalized PARA の対象ユーザーに出現する全画像に対して 1 回だけ mm_embed を通し、
+- 先に personalized データの対象ユーザーに出現する全画像に対して 1 回だけ mm_embed を通し、
   AllPools をキャッシュする。
-- そのキャッシュを使って、指定された feature_source それぞれの全層 (layer index) について
-  residual_linear (Ridge) を per-user で学習し、test セットに対する予測を CSV に出力する。
+- そのキャッシュを使って、指定された feature_source 各々について
+  利用可能な全レイヤー (layer index) について residual_linear (Ridge) を per-user で学習し、
+  test セットに対する予測を CSV に出力する。
 
-出力形式 (各 source/layer コンビ毎に CSV を作成):
-  user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
+対応データセット:
+  - PARA  : utils.para.get_personalized_para_dataset
+  - LAPIS : utils.lapis.get_personalized_lapis_dataset
 
-method 名:
-  residual_linear_<feature_source>_L<layer_idx>
+入力:
+  - GIAA CSV (from vlm_giaa.py) with columns:
+      model_id, dataset, split, image_path, giaa, raw_output
+  - dataset (para / lapis)
+  - VLM (mm_embed) model_id
+  - feature_sources (llm_text, vision, ...)
+
+出力:
+  - --out_dir の中に、feature_source × layer の各組み合わせごとに 1 つの CSV:
+      residual_linear_<source>_L<layer>.csv
+    各行は:
+      user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
 """
 
 import os
@@ -33,6 +45,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
 from utils.para import get_personalized_para_dataset
+from utils.lapis import get_personalized_lapis_dataset
 from utils.mm_embed import load_mm_model, build_inputs, extract_all_pools
 
 
@@ -75,8 +88,8 @@ def load_giaa_map(
     """
     Read GIAA CSV and build a dict: image_path -> giaa (float).
 
-    Expected columns in CSV (from vlm_giaa_para.py):
-      model_id, split, image_path, giaa, raw_output
+    Expected columns in CSV (from vlm_giaa.py):
+      model_id, dataset, split, image_path, giaa, raw_output
 
     If model_id_filter is given, only that model_id is used.
     If not, CSV must contain exactly one model_id.
@@ -176,14 +189,20 @@ def get_layer_range_for_source(
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument(
+        "--dataset",
+        required=True,
+        choices=["para", "lapis"],
+        help="Dataset to use (para or lapis).",
+    )
+    ap.add_argument(
         "--giaa_csv",
         required=True,
-        help="Path to GIAA prediction CSV (from vlm_giaa_para.py).",
+        help="Path to GIAA prediction CSV (from vlm_giaa.py).",
     )
     ap.add_argument(
         "--dataset_dir",
-        default="datasets/PARA",
-        help="Path to PARA dataset root.",
+        default=None,
+        help="Path to dataset root. If None, uses datasets/PARA or datasets/LAPIS.",
     )
     ap.add_argument(
         "--model_id",
@@ -214,7 +233,7 @@ def main():
         "--support_set",
         default="small",
         choices=["small", "large"],
-        help="Which support set from get_personalized_para_dataset to use.",
+        help="Which support set from personalized dataset to use.",
     )
     ap.add_argument(
         "--prompt_mode",
@@ -226,7 +245,7 @@ def main():
         "--seed",
         type=int,
         default=42,
-        help="Random seed for get_personalized_para_dataset (must match when generating splits).",
+        help="Random seed for personalized split (must match when generating splits).",
     )
     ap.add_argument(
         "--quick",
@@ -243,13 +262,24 @@ def main():
 
     os.makedirs(args.out_dir, exist_ok=True)
 
+    # dataset_dir デフォルト
+    if args.dataset_dir is None:
+        if args.dataset == "para":
+            args.dataset_dir = "datasets/PARA"
+        else:
+            args.dataset_dir = "datasets/LAPIS"
+
     # 1) Load GIAA map
     image_to_giaa, giaa_model_id = load_giaa_map(args.giaa_csv, args.model_id_filter)
     print(f"[info] using GIAA model_id={giaa_model_id}, entries={len(image_to_giaa)}")
 
-    # 2) Load personalized PARA dataset
-    print("[info] loading personalized PARA dataset...")
-    personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
+    # 2) Load personalized dataset (PARA or LAPIS)
+    print(f"[info] loading personalized {args.dataset.upper()} dataset...")
+    if args.dataset == "para":
+        personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
+    else:
+        personalized = get_personalized_lapis_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
+
     all_user_ids = sorted(personalized.keys())
     print(f"[info] num users in personalized dataset: {len(all_user_ids)}")
 
@@ -307,7 +337,7 @@ def main():
 
     # Helper: build support/test arrays for a given user and (source,layer)
     def build_support_and_test(
-        user_id: str,
+        user_id,
         source: str,
         layer_idx: int,
     ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[str, float, float]]]:
