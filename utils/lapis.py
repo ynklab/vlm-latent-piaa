@@ -128,10 +128,15 @@ def get_personalized_lapis_dataset(
 
     # We don't sample users, just take all valid ones and shuffle
     rng = random.Random(seed)
-    rng.shuffle(valid_users)
+    if len(valid_users) >= 200:
+        selected_user_ids = rng.sample(valid_users, 200)
+    else:
+        selected_user_ids = valid_users
+        rng.shuffle(selected_user_ids)
 
     # Filter the main DataFrame to only include selected users
-    user_df = df[df["participant_id"].isin(valid_users)]
+    user_df = df[df["participant_id"].isin(selected_user_ids)]
+
 
     personalized_dataset = {}
 
