@@ -18,6 +18,7 @@ dependencies = [
     "transformers",
     "datasets",
     "accelerate",
+    "peft",
     "pillow",
     "torchvision",
     "scipy",
