@@ -126,7 +126,7 @@ def get_personalized_lapis_dataset(
     total_required = num_support_small + num_support_large + num_test
     valid_users = user_counts[user_counts >= total_required].index.tolist()
 
-    # We don't sample users, just take all valid ones and shuffle
+    
     rng = random.Random(seed)
     if len(valid_users) >= 200:
         selected_user_ids = rng.sample(valid_users, 200)
