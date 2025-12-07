@@ -146,6 +146,16 @@ def get_personalized_lapis_dataset(
     for user_id, user_group_df in tqdm(grouped, desc="Processing users"):
         # Shuffle and split the user's DataFrame
         shuffled_group = user_group_df.sample(frac=1, random_state=seed)
+        shuffled_group = shuffled_group.drop_duplicates(subset=['image_path', 'participant_id'])
+        image_paths = shuffled_group['image_path']
+        image_paths_length = len(image_paths)
+        image_set_length = len(set(image_paths))
+        if image_paths_length > image_set_length:
+            raise ValueError('Duplicate entries')
+
+        if image_set_length < num_support_small + num_support_large + num_test:
+            raise ValueError('Insufficient number of instances')
+
 
         support_small_df = shuffled_group.iloc[:num_support_small]
         support_large_df = shuffled_group.iloc[
