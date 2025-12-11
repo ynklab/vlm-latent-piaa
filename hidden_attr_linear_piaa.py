@@ -46,6 +46,7 @@ from sklearn.pipeline import make_pipeline
 from utils.para import get_personalized_para_dataset
 from utils.lapis import get_personalized_lapis_dataset
 from utils.para_hard_images import get_personalized_para_hard_dataset
+from utils.para_hard_users import get_personalized_para_hard_users_dataset
 from utils.mm_embed import load_mm_model, build_inputs, extract_all_pools
 
 
@@ -94,7 +95,7 @@ def main():
     ap.add_argument(
         "--dataset",
         required=True,
-        choices=["para", "para_hard_images", "lapis"],
+        choices=["para", "para_hard_images", "para_hard_users", "lapis"],
         help="Dataset to use (para or lapis).",
     )
     ap.add_argument(
@@ -139,7 +140,7 @@ def main():
 
     # dataset_dir デフォルト
     if args.dataset_dir is None:
-        if args.dataset in ["para", "para_hard_images"]:
+        if args.dataset in ["para", "para_hard_images", "para_hard_users"]:
             args.dataset_dir = "datasets/PARA"
         else:
             args.dataset_dir = "datasets/LAPIS"
@@ -170,6 +171,8 @@ def main():
         personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
     elif args.dataset == "para_hard_images":
         personalized = get_personalized_para_hard_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
+    elif args.dataset == "para_hard_users":
+        personalized, _ = get_personalized_para_hard_users_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
     else:
         personalized = get_personalized_lapis_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
 
