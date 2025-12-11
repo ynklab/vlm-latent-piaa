@@ -43,6 +43,7 @@ from tqdm import tqdm
 
 from utils.para import get_personalized_para_dataset
 from utils.lapis import get_personalized_lapis_dataset
+from utils.para_hard_images import get_personalized_para_hard_dataset
 
 
 # ---------- GIAA loader ----------
@@ -102,7 +103,7 @@ def main():
     ap.add_argument(
         "--dataset",
         required=True,
-        choices=["para", "lapis"],
+        choices=["para", "lapis", "para_hard_images"],
         help="Dataset to use for PIAA baselines (para or lapis).",
     )
     ap.add_argument(
@@ -141,7 +142,7 @@ def main():
 
     # dataset_dir デフォルト
     if args.dataset_dir is None:
-        if args.dataset == "para":
+        if args.dataset in ["para", "para_hard_images"]:
             args.dataset_dir = "datasets/PARA"
         else:
             args.dataset_dir = "datasets/LAPIS"
@@ -154,6 +155,8 @@ def main():
     print(f"[info] loading personalized {args.dataset.upper()} dataset...")
     if args.dataset == "para":
         personalized_data = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
+    elif args.dataset == "para_hard_images":
+        personalized_data = get_personalized_para_hard_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
     else:
         personalized_data = get_personalized_lapis_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
     print(f"[info] num users in personalized dataset: {len(personalized_data)}")

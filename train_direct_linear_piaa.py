@@ -48,6 +48,7 @@ from sklearn.pipeline import make_pipeline
 
 from utils.para import get_personalized_para_dataset, get_para_dataset
 from utils.lapis import get_personalized_lapis_dataset, get_lapis_dataset
+from utils.para_hard_images import get_personalized_para_hard_dataset
 from utils.mm_embed import load_mm_model, build_inputs, extract_all_pools
 
 
@@ -119,7 +120,7 @@ def main():
     ap.add_argument(
         "--dataset",
         required=True,
-        choices=["para", "lapis"],
+        choices=["para", "para_hard_images", "lapis"],
         help="Dataset to use (para or lapis).",
     )
     ap.add_argument(
@@ -202,6 +203,8 @@ def main():
     print(f"[info] loading personalized {args.dataset.upper()} dataset...")
     if args.dataset == "para":
         personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
+    elif args.dataset == "para_hard_images":
+        personalized = get_personalized_para_hard_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
     else:
         personalized = get_personalized_lapis_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
 
@@ -219,7 +222,7 @@ def main():
     image_to_giaa_gt: Dict[str, float] = {}
     if args.target_score == "giaa_gt":
         print(f"[info] loading dataset-level GIAA ground truth for {args.dataset.upper()} ...")
-        if args.dataset == "para":
+        if args.dataset in ["para", "para_hard_images"]:
             gt_items = get_para_dataset(None, dataset_dir=args.dataset_dir)
         else:
             gt_items = get_lapis_dataset(None, dataset_dir=args.dataset_dir)
