@@ -21,7 +21,7 @@ from utils.para import (
 def get_personalized_para_hard_dataset(
     seed: int,
     dataset_dir: str = "datasets/PARA",
-    top_fraction: float = 0.5,
+    top_fraction: float = 0.1,
     min_raters: int = 3,
     num_support_small: int = 10,
     num_support_large: int = 100,

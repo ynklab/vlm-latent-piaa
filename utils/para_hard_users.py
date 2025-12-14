@@ -99,7 +99,7 @@ def compute_user_giaa_correlations(
 def get_personalized_para_hard_users_dataset(
     seed: int,
     dataset_dir: str = "datasets/PARA",
-    max_users: int = 200,
+    max_users: int = 50,
     metric: str = "spearman",
     min_corr_items: int = 30,
     num_support_small: int = 10,
