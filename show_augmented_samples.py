@@ -105,9 +105,9 @@ def show_and_save_triplet(image_path: str, dataset: str, out_path: str, seed: in
 
     modes: List[str] = ["orig", "gray", "tps"]
     titles = {
-        "orig": "Original (RGB)",
-        "gray": "Grayscale (3ch)",
-        "tps":  "ThinPlateSpline",
+        "orig": "Original (orig)",
+        "gray": "Grayscale (gray)",
+        "tps":  "ThinPlateSpline (tps)",
     }
 
     imgs = [apply_image_mode(img, m, tps_transform) for m in modes]
@@ -116,10 +116,10 @@ def show_and_save_triplet(image_path: str, dataset: str, out_path: str, seed: in
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
     for ax, m, im in zip(axes, modes, imgs):
         ax.imshow(im)
-        ax.set_title(titles[m])
+        ax.set_title(titles[m], fontsize=27)
         ax.axis("off")
 
-    fig.suptitle(f"{dataset.upper()} sample\n{os.path.basename(image_path)}", fontsize=14)
+    # fig.suptitle(f"{dataset.upper()} sample\n{os.path.basename(image_path)}", fontsize=14)
     plt.tight_layout(rect=[0, 0, 1, 0.92])
 
     if out_path is not None:

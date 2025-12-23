@@ -27,6 +27,7 @@ import pandas as pd
 from tqdm import tqdm
 from scipy.stats import spearmanr
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 from PIL import Image
 
 
@@ -196,40 +197,25 @@ def create_thumbnail_grid(sub_df: pd.DataFrame, out_path: str, title: str, max_c
     print(f"[thumb] saved {out_path}")
 
 
-def create_stacked_thumbnail(
-    groups: List[tuple],
-    out_path: str,
-    title: str,
-    max_cols: int = 5,
-):
-    """
-    groups: List of (sub_df, group_label), e.g.
-        [
-          (df_low, "low"),
-          (df_mid, "mid"),
-          (df_high, "high"),
-        ]
 
-    各 group (low/mid/high) を1行として横方向に並べたグリッドを作り、
-    それら3行を縦にstackしたサムネイル画像を1枚生成する。
-    行ごとに背景色を変えて、low/mid/high の境界を視覚的に強調する。
-    """
-    # 空グループのみの場合は何もしない
+def create_stacked_thumbnail(groups, out_path, title, max_cols=5):
     total_images = sum(len(df) for df, _ in groups)
     if total_images == 0:
         return
 
     group_dfs = [df for (df, _) in groups]
-    group_labels = [lbl for (_, lbl) in groups]
+    # group_labels = [lbl for (_, lbl) in groups]
+    group_labels = ["High Score", "Low Score"]
 
     max_n = max(len(df) for df in group_dfs)
     if max_n == 0:
         return
     cols = min(max_cols, max_n)
-    rows = len(group_dfs)  # groupごとに1行
+    rows = len(group_dfs)
 
     plt.close("all")
     fig, axes = plt.subplots(rows, cols, figsize=(3 * cols, 3 * rows))
+
     if rows == 1 and cols == 1:
         axes = np.array([[axes]])
     elif rows == 1:
@@ -237,57 +223,71 @@ def create_stacked_thumbnail(
     elif cols == 1:
         axes = np.array([[ax] for ax in axes])
 
-    # 行ごとに背景色を変える（必要に応じて色を増やしてもOK）
-    row_colors = ["#f0f0f0", "#e0f7fa", "#fce4ec", "#f3e5f5"]  # light gray / cyan / pink / purple
+    # 行帯の背景色（図全体に敷く）
+    row_colors = ["#f0f0f0", "#e0f7fa", "#fce4ec", "#f3e5f5"]
 
+    # --- まず各行の帯を figure 座標で敷く（imshowに隠されない） ---
+    # これをやるために、一旦 tight_layout は使わず subplots_adjust で余白を確保する
+    fig.subplots_adjust(left=0.08, right=0.98, top=0.90, bottom=0.06, wspace=0.08, hspace=0.12)
+
+    # 行ごとの y 範囲を axes の position から取得して帯を敷く
+    for r in range(rows):
+        pos_left = axes[r, 0].get_position()
+        pos_right = axes[r, cols - 1].get_position()
+        x0 = pos_left.x0
+        x1 = pos_right.x1
+        y0 = pos_left.y0
+        y1 = pos_left.y1
+        rect = Rectangle(
+            (x0, y0),
+            width=(x1 - x0),
+            height=(y1 - y0),
+            transform=fig.transFigure,
+            facecolor=row_colors[r % len(row_colors)],
+            edgecolor="none",
+            zorder=0,  # 背面
+        )
+        fig.add_artist(rect)
+
+    # --- 画像を描画 + 行ラベルを Axes 内に text で描く ---
     for r, df_group in enumerate(group_dfs):
         paths = df_group["image_path"].tolist()
         gt_scores = df_group["user_score"].tolist()
         preds = df_group.get("piaa_pred", pd.Series([np.nan] * len(df_group))).tolist()
         errs = df_group.get("err", pd.Series([np.nan] * len(df_group))).tolist()
-        n = len(paths)
 
         for c in range(cols):
             ax = axes[r, c]
-            # 背景色をセット（画像がなくても行の帯が見えるように）
-            ax.set_facecolor(row_colors[r % len(row_colors)])
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_frame_on(False)
 
         for idx, (p, gt, pr, er) in enumerate(zip(paths, gt_scores, preds, errs)):
             if idx >= cols:
                 break
-            c = idx
-            ax = axes[r, c]
+            ax = axes[r, idx]
             try:
                 img = Image.open(p).convert("RGB")
+                ax.imshow(img)
             except Exception:
-                ax.axis("off")
-                continue
-            ax.imshow(img)
-            ax.axis("off")
-            t = f"gt={gt:.2f}"
-            if not np.isnan(pr):
-                t += f"\npred={pr:.2f}"
-            if not np.isnan(er):
-                t += f"\nerr={er:.2f}"
-            ax.set_title(t, fontsize=8)
+                pass
+            ax.set_axis_off()
 
-        # 余りセルを消す（背景色だけ残す）
-        for idx in range(n, cols):
-            ax = axes[r, idx]
-            ax.axis("off")
-            ax.set_facecolor(row_colors[r % len(row_colors)])
-
-        # 行ラベル（左端のサブプロットの左に大きめ＆太字で表示）
-        axes[r, 0].set_ylabel(
+        # 行ラベル（Axesの左上に重ね書き。bboxで読みやすく）
+        ax0 = axes[r, 0]
+        ax0.text(
+            0.01, 0.02,
             group_labels[r],
-            fontsize=11,
+            transform=ax0.transAxes,
+            fontsize=25,
             fontweight="bold",
-            rotation=0,
-            labelpad=25,
-            va="center",
+            va="bottom",
+            ha="left",
+            bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.8, edgecolor="none"),
+            zorder=5,
         )
 
-    fig.suptitle(title, fontsize=12)
+    fig.suptitle(title, fontsize=30)
     plt.tight_layout()
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fig.savefig(out_path, dpi=160, bbox_inches="tight")
@@ -381,7 +381,11 @@ def main():
         df_user_gt["err"] = np.nan
         df_user_gt["piaa_pred"] = np.nan
 
-        gt_groups = [("low", "gt_low"), ("mid", "gt_mid"), ("high", "gt_high")]
+        gt_groups = [
+            ("high", "gt_high"),
+            # ("mid", "gt_mid"),
+            ("low", "gt_low"),
+        ]
         gt_subs = []
 
         for grp, label in gt_groups:
@@ -397,7 +401,8 @@ def main():
         create_stacked_thumbnail(
             gt_subs,
             stacked_gt_path,
-            title=f"user={user_id} GT (low/mid/high)",
+            # title=f"user={user_id} GT (low/mid/high)",
+            title="Ground Truth",
             max_cols=args.n_imgs,
         )
 
@@ -443,7 +448,11 @@ def main():
                 f.write(f"n_items={len(df_um)}\n")
 
             # pred-based groups: high/mid/low
-            pred_groups = [("low", "pred_low"), ("mid", "pred_mid"), ("high", "pred_high")]
+            pred_groups = [
+                ("high", "pred_high"),
+                # ("mid", "pred_mid"),
+                ("low", "pred_low"),
+            ]
             pred_subs = []
 
             for grp, label in pred_groups:
@@ -460,10 +469,19 @@ def main():
 
             # low / mid / high の pred サムネイルを stack した1枚
             stacked_pred_path = os.path.join(method_dir, "pred_stacked.png")
+            if method == 'direct_linear_llm_text_L15':
+                title = "Linear-Hidden"
+            elif method == 'direct_linear_giaa_gt_llm_text_L15':
+                title = "Linear-Hidden (GIAA)"
+            else:
+                continue
+                # title = method
+
             create_stacked_thumbnail(
                 pred_subs,
                 stacked_pred_path,
-                title=f"user={user_id} method={method} sup={sup} pred (low/mid/high)",
+                # title=f"user={user_id} method={method} sup={sup} pred (low/mid/high)",
+                title=title,
                 max_cols=args.n_imgs,
             )
 

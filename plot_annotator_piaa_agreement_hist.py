@@ -167,12 +167,12 @@ def plot_histogram(rhos: List[float], out_png: str, title: str):
     rhos_arr = np.array(rhos, dtype=float)
 
     plt.close("all")
-    fig, ax = plt.subplots(figsize=(7, 4))
+    fig, ax = plt.subplots(figsize=(5, 5))
     ax.hist(rhos_arr, bins=30, range=(-1.0, 1.0), alpha=0.75, edgecolor="black")
     ax.set_xlim(-1.0, 1.0)
-    ax.set_xlabel("Annotator-level correlation with GT PIAA")
-    ax.set_ylabel("Number of annotators")
-    ax.set_title(title)
+    ax.set_xlabel("Correlation with GIAA scores", fontsize=18)
+    ax.set_ylabel("Number of annotators", fontsize=18)
+    ax.set_title(title, fontsize=18)
 
     # Summary stats as text
     txt = (
@@ -182,20 +182,20 @@ def plot_histogram(rhos: List[float], out_png: str, title: str):
         f"min  = {rhos_arr.min():.3f}\n"
         f"max  = {rhos_arr.max():.3f}"
     )
-    ax.text(
-        0.98,
-        0.95,
-        txt,
-        transform=ax.transAxes,
-        ha="right",
-        va="top",
-        fontsize=8,
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
-    )
+    # ax.text(
+    #     0.98,
+    #     0.95,
+    #     txt,
+    #     transform=ax.transAxes,
+    #     ha="left",
+    #     va="top",
+    #     fontsize=8,
+    #     bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+    # )
 
     plt.tight_layout()
     os.makedirs(os.path.dirname(out_png) or ".", exist_ok=True)
-    fig.savefig(out_png, dpi=200)
+    fig.savefig(out_png, dpi=400)
     plt.close(fig)
     print(f"[save] histogram -> {out_png}")
     print("[stats]")
@@ -259,7 +259,8 @@ def main():
         dataset_label = "LAPIS"
 
     loo_label = " (leave-one-out)" if args.leave_one_out else ""
-    title = f"{dataset_label}: annotator vs GT PIAA {args.metric.title()} correlation{loo_label}"
+    # title = f"{dataset_label}: annotator vs GT PIAA {args.metric.title()} correlation{loo_label}"
+    title = dataset_label
 
     plot_histogram(rhos, args.out_png, title)
 
