@@ -124,7 +124,7 @@ def show_and_save_triplet(image_path: str, dataset: str, out_path: str, seed: in
 
     if out_path is not None:
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-        fig.savefig(out_path, dpi=160, bbox_inches="tight")
+        fig.savefig(out_path, bbox_inches="tight")
         print(f"[save] {out_path}")
 
     plt.show()

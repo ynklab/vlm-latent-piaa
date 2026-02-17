@@ -24,7 +24,7 @@ Expected JSON format (probe_image_aug_sensitivity.py output):
 
 Output:
   out_dir / <dataset> / <prompt_mode> / <model_id> /
-    aug__V_to_LT__<attr>__<split>__<metric>.png
+    aug__V_to_LT__<attr>__<split>__<metric>.pdf
 
 Plot per attribute:
   - 3 lines: orig / gray / tps
@@ -241,7 +241,7 @@ def plot_v_to_lt_per_attr(
 
     plt.tight_layout()
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    fig.savefig(out_path, dpi=400, bbox_inches="tight")
+    fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[viz] saved: {out_path}")
 
@@ -359,7 +359,7 @@ def main():
             t_mode_to_vals = t_mode_to_vals_filtered
 
             # plot
-            out_path = os.path.join(out_base, f"aug__V_to_LT__{sanitize(attr)}__{args.split}__{args.metric}.png")
+            out_path = os.path.join(out_base, f"aug__V_to_LT__{sanitize(attr)}__{args.split}__{args.metric}.pdf")
             plot_v_to_lt_per_attr(
                 dataset=dataset,
                 prompt_mode=prompt_mode,

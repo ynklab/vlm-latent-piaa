@@ -81,12 +81,14 @@ def parse_best_for_attr(
         if not isinstance(entry, dict):
             continue
         src = entry.get("source")
-        if src == 'llm_text_tail':
+        if src != 'vision':
             continue
-        if src == 'llm_visual':
-            continue
-        if src == 'vision' and skip_vision:
-            continue
+        # if src == 'llm_text_tail':
+        #     continue
+        # if src == 'llm_visual':
+        #     continue
+        # if src == 'vision' and skip_vision:
+        #     continue
         layer = entry.get("layer")
         if source_filter is not None and str(src) != source_filter:
             continue
@@ -118,6 +120,7 @@ MODEL_META = {
     "google/gemma-3-4b-it":       ("Gemma 3",  "4B"),
     "google/gemma-3-12b-it":      ("Gemma 3",  "12B"),
     "facebook/dinov3-vitb16-pretrain-lvd1689m": ("DINOv3", "ViT-B/16"),
+    "facebook/dinov3-vitl16-pretrain-lvd1689m": ("DINOv3", "ViT-L/16"),
 }
 
 PREFERRED_MODEL_ORDER = [
@@ -127,6 +130,7 @@ PREFERRED_MODEL_ORDER = [
     "google/gemma-3-4b-it",
     "google/gemma-3-12b-it",
     "facebook/dinov3-vitb16-pretrain-lvd1689m",
+    "facebook/dinov3-vitl16-pretrain-lvd1689m",
 ]
 
 def sort_models_present(models_present: List[str]) -> List[str]:

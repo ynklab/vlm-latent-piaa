@@ -71,6 +71,19 @@ def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     rmse = math.sqrt(mse)
     return {"rho": float(rho), "r2": float(r2), "rmse": float(rmse)}
 
+def _finite_report(X: np.ndarray, name: str):
+    X = X.astype(np.float32, copy=False)
+    bad = ~np.isfinite(X)
+    if bad.any():
+        n_bad = int(bad.sum())
+        max_abs = float(np.nanmax(np.abs(X[np.isfinite(X)]))) if np.isfinite(X).any() else float("nan")
+        print(f"[warn] {name}: non-finite={n_bad}, max_abs_finite={max_abs}")
+        # どの行（画像）が壊れているか
+        bad_rows = np.where(~np.isfinite(X).all(axis=1))[0]
+        print(f"       bad_rows (first 10)={bad_rows[:10].tolist()}")
+        return True
+    return False
+
 
 def _fit_eval_one_layer(
     Xtr: np.ndarray,
@@ -254,6 +267,7 @@ def main():
             Xtr = Xtr_layers[li]
             Xva = Xva_layers[li]
             Xte = Xte_layers[li]
+            assert not _finite_report(Xtr, f"Xtr L{li}")
 
             train_m, val_m, test_m = _fit_eval_one_layer(Xtr, ytr, Xva, yva, Xte, yte)
             item = {

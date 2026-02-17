@@ -198,24 +198,40 @@ def create_thumbnail_grid(sub_df: pd.DataFrame, out_path: str, title: str, max_c
 
 
 
-def create_stacked_thumbnail(groups, out_path, title, max_cols=5):
+def create_stacked_thumbnail(groups, out_path, title, max_cols=5,
+                            cell_border=2.0, label_w=0.14, top_h=0.10,
+                            annotate_scores=False):
+    """
+    Table-style 2xK grid (High / Low rows) with explicit borders and row headers.
+
+    - groups: [(df_high, "High Score"), (df_low, "Low Score")] の想定
+    - title: 図のタイトル（手法名など）
+    - label_w: 左側の行ラベル領域の幅（figure幅に対する割合）
+    - top_h  : 上側のタイトル領域の高さ（figure高さに対する割合）
+    - annotate_scores: True なら各セル下に gt/pred/err の小注記を入れる
+    """
+
     total_images = sum(len(df) for df, _ in groups)
     if total_images == 0:
         return
 
+    # ---- 固定：2行（High/Low）を想定。必要なら一般化可 ----
     group_dfs = [df for (df, _) in groups]
-    # group_labels = [lbl for (_, lbl) in groups]
     group_labels = ["High Score", "Low Score"]
 
-    max_n = max(len(df) for df in group_dfs)
-    if max_n == 0:
-        return
-    cols = min(max_cols, max_n)
     rows = len(group_dfs)
+    max_n = max(len(df) for df in group_dfs)
+    cols = min(max_cols, max_n)
+    if rows == 0 or cols == 0:
+        return
 
+    # Figure size: 1セル=正方形気味に
+    fig_w = 3.0 * cols / (1.0 - label_w)
+    fig_h = 3.0 * rows / (1.0 - top_h)
     plt.close("all")
-    fig, axes = plt.subplots(rows, cols, figsize=(3 * cols, 3 * rows))
+    fig, axes = plt.subplots(rows, cols, figsize=(fig_w, fig_h))
 
+    # axes shape normalize
     if rows == 1 and cols == 1:
         axes = np.array([[axes]])
     elif rows == 1:
@@ -223,74 +239,99 @@ def create_stacked_thumbnail(groups, out_path, title, max_cols=5):
     elif cols == 1:
         axes = np.array([[ax] for ax in axes])
 
-    # 行帯の背景色（図全体に敷く）
-    row_colors = ["#f0f0f0", "#e0f7fa", "#fce4ec", "#f3e5f5"]
+    # レイアウト：左に行ラベル用の余白、上にタイトル用余白を確保
+    fig.subplots_adjust(
+        left=label_w, right=0.99,
+        top=1.0 - top_h, bottom=0.04,
+        wspace=0.02, hspace=0.02
+    )
 
-    # --- まず各行の帯を figure 座標で敷く（imshowに隠されない） ---
-    # これをやるために、一旦 tight_layout は使わず subplots_adjust で余白を確保する
-    fig.subplots_adjust(left=0.08, right=0.98, top=0.90, bottom=0.06, wspace=0.08, hspace=0.12)
-
-    # 行ごとの y 範囲を axes の position から取得して帯を敷く
-    for r in range(rows):
-        pos_left = axes[r, 0].get_position()
-        pos_right = axes[r, cols - 1].get_position()
-        x0 = pos_left.x0
-        x1 = pos_right.x1
-        y0 = pos_left.y0
-        y1 = pos_left.y1
-        rect = Rectangle(
-            (x0, y0),
-            width=(x1 - x0),
-            height=(y1 - y0),
-            transform=fig.transFigure,
-            facecolor=row_colors[r % len(row_colors)],
-            edgecolor="none",
-            zorder=0,  # 背面
-        )
-        fig.add_artist(rect)
-
-    # --- 画像を描画 + 行ラベルを Axes 内に text で描く ---
+    # ----- 各セルに画像を描画 -----
     for r, df_group in enumerate(group_dfs):
         paths = df_group["image_path"].tolist()
-        gt_scores = df_group["user_score"].tolist()
-        preds = df_group.get("piaa_pred", pd.Series([np.nan] * len(df_group))).tolist()
-        errs = df_group.get("err", pd.Series([np.nan] * len(df_group))).tolist()
+        gt_scores = df_group.get("user_score", pd.Series([np.nan]*len(df_group))).tolist()
+        preds = df_group.get("piaa_pred", pd.Series([np.nan]*len(df_group))).tolist()
+        errs = df_group.get("err", pd.Series([np.nan]*len(df_group))).tolist()
 
         for c in range(cols):
             ax = axes[r, c]
-            ax.set_xticks([])
-            ax.set_yticks([])
+            ax.set_xticks([]); ax.set_yticks([])
             ax.set_frame_on(False)
 
-        for idx, (p, gt, pr, er) in enumerate(zip(paths, gt_scores, preds, errs)):
-            if idx >= cols:
-                break
-            ax = axes[r, idx]
+        for c in range(min(cols, len(paths))):
+            ax = axes[r, c]
             try:
-                img = Image.open(p).convert("RGB")
+                img = Image.open(paths[c]).convert("RGB")
                 ax.imshow(img)
             except Exception:
                 pass
-            ax.set_axis_off()
 
-        # 行ラベル（Axesの左上に重ね書き。bboxで読みやすく）
-        ax0 = axes[r, 0]
-        ax0.text(
-            0.01, 0.02,
-            group_labels[r],
-            transform=ax0.transAxes,
-            fontsize=25,
-            fontweight="bold",
-            va="bottom",
-            ha="left",
-            bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.8, edgecolor="none"),
-            zorder=5,
+            # optional small annotation under the image (inside the cell)
+            if annotate_scores:
+                gt = gt_scores[c] if c < len(gt_scores) else np.nan
+                pr = preds[c] if c < len(preds) else np.nan
+                er = errs[c] if c < len(errs) else np.nan
+                txt = f"GT={gt:.2f}  Pred={pr:.2f}  Err={er:.2f}"
+                ax.text(
+                    0.02, 0.02, txt,
+                    transform=ax.transAxes,
+                    fontsize=8,
+                    color="white",
+                    va="bottom", ha="left",
+                    bbox=dict(boxstyle="round,pad=0.15", facecolor="black", alpha=0.55, edgecolor="none"),
+                    zorder=10,
+                )
+
+    # ----- 罫線を描く（table感の主役） -----
+    # 各 axes の位置を figure 座標で取り、セル境界に rectangle を重ねる
+    for r in range(rows):
+        for c in range(cols):
+            ax = axes[r, c]
+            pos = ax.get_position()
+            rect = Rectangle(
+                (pos.x0, pos.y0),
+                pos.width, pos.height,
+                transform=fig.transFigure,
+                fill=False,
+                linewidth=cell_border,
+                edgecolor="black",
+                zorder=20,
+            )
+            fig.add_artist(rect)
+
+    # ----- 行ラベル（表の左） -----
+    for r, lbl in enumerate(group_labels):
+        # 行の中央yを axes の位置から取る
+        pos = axes[r, 0].get_position()
+        y_center = (pos.y0 + pos.y1) / 2
+        fig.text(
+            0.02, y_center, lbl,
+            ha="left", va="center",
+            fontsize=21, fontweight="bold",
+            bbox=dict(
+                boxstyle="round,pad=0.25",
+                facecolor="white",
+                alpha=0.6,          # ← 透過（好みで 0.5〜0.8）
+                edgecolor="none",
+            ),
         )
 
-    fig.suptitle(title, fontsize=30)
-    plt.tight_layout()
+    # # ----- 列ラベル（任意）：#1, #2, ... -----
+    # for c in range(cols):
+    #     pos = axes[0, c].get_position()
+    #     x_center = (pos.x0 + pos.x1) / 2
+    #     fig.text(
+    #         x_center, 1.0 - top_h + 0.01,
+    #         f"#{c+1}",
+    #         ha="center", va="bottom",
+    #         fontsize=14, fontweight="bold"
+    #     )
+
+    # ----- タイトル -----
+    fig.suptitle(title, fontsize=24, y=0.995)
+
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    fig.savefig(out_path, dpi=160, bbox_inches="tight")
+    fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[thumb-stacked] saved {out_path}")
 
@@ -397,7 +438,7 @@ def main():
             create_thumbnail_grid(sub, grid_path, title=f"user={user_id} {label}")
 
         # low / mid / high を stack した1枚 (GT)
-        stacked_gt_path = os.path.join(user_dir, "gt_stacked.png")
+        stacked_gt_path = os.path.join(user_dir, "gt_stacked.pdf")
         create_stacked_thumbnail(
             gt_subs,
             stacked_gt_path,
@@ -468,7 +509,7 @@ def main():
                 )
 
             # low / mid / high の pred サムネイルを stack した1枚
-            stacked_pred_path = os.path.join(method_dir, "pred_stacked.png")
+            stacked_pred_path = os.path.join(method_dir, "pred_stacked.pdf")
             if method == 'direct_linear_llm_text_L15':
                 title = "Linear-Hidden"
             elif method == 'direct_linear_giaa_gt_llm_text_L15':

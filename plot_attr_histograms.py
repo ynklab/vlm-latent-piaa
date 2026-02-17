@@ -128,7 +128,7 @@ def _plot_histograms(
 
         # ヒストグラム
         ax.hist(vals, bins=bins)
-        ax.set_title(attr)
+        ax.set_title("Overall Score" if attr == 'score' else attr, fontsize=18)
         ax.grid(True, linestyle="--", alpha=0.3)
 
     # 余ったサブプロットを消す
@@ -137,11 +137,11 @@ def _plot_histograms(
         c = idx % n_cols
         axes[r, c].axis("off")
 
-    fig.suptitle(f"{dataset_name.upper()} attribute distributions", fontsize=14)
+    # fig.suptitle(f"{dataset_name.upper()} attribute distributions", fontsize=14)
     plt.tight_layout(rect=[0, 0, 1, 0.96])
 
-    out_path = os.path.join(out_dir, f"{dataset_name}_attributes_hist.png")
-    fig.savefig(out_path, dpi=160, bbox_inches="tight")
+    out_path = os.path.join(out_dir, f"{dataset_name}_attributes_hist.pdf")
+    fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[save] {out_path}")
 

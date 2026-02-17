@@ -103,8 +103,17 @@ def save_heatmap(corr_df: pd.DataFrame, out_png: str, title: str = "Correlation"
     im = ax.imshow(corr_df.values, vmin=vmin, vmax=vmax, cmap="coolwarm", aspect="equal")
     ax.set_xticks(np.arange(len(corr_df.columns)))
     ax.set_yticks(np.arange(len(corr_df.index)))
-    ax.set_xticklabels(corr_df.columns, rotation=45, ha="right", fontsize=8)
-    ax.set_yticklabels(corr_df.index, fontsize=8)
+    columns = [
+        "Overall Score" if col == 'score' else col
+        for col in corr_df.columns
+    ]
+    indices = [
+        "Overall Score" if idx == 'score' else idx  
+        for idx in corr_df.index
+    ]
+
+    ax.set_xticklabels(columns, rotation=45, ha="right", fontsize=8)
+    ax.set_yticklabels(indices, fontsize=8)
     # show values
     for i in range(len(corr_df.index)):
         for j in range(len(corr_df.columns)):
@@ -115,10 +124,10 @@ def save_heatmap(corr_df: pd.DataFrame, out_png: str, title: str = "Correlation"
                 txt = f"{val:.2f}"
             ax.text(j, i, txt, ha="center", va="center", fontsize=6, color="black")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    plt.title(title)
+    # plt.title(title)
     plt.tight_layout()
     os.makedirs(os.path.dirname(out_png) or ".", exist_ok=True)
-    fig.savefig(out_png, dpi=200)
+    fig.savefig(out_png, dpi=400)
     plt.close(fig)
 
 
@@ -165,9 +174,9 @@ def main():
         print(f"[save] {m} correlation CSV -> {corr_csv}")
         print(f"[save] {m} p-value CSV      -> {pval_csv}")
 
-        png_path = base + "_corr.png"
-        save_heatmap(corr_df, png_path, title=f"{m.title()} correlation")
-        print(f"[save] {m} heatmap PNG -> {png_path}")
+        pdf_path = base + "_corr.pdf"
+        save_heatmap(corr_df, pdf_path, title=f"{m.title()} correlation")
+        print(f"[save] {m} heatmap PDF -> {pdf_path}")
 
     print("[done]")
 

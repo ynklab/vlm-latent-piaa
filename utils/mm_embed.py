@@ -290,7 +290,7 @@ def load_dinov3_model(
 
     if dtype == "auto":
         if torch.cuda.is_available():
-            torch_dtype = torch.float16
+            torch_dtype = torch.bfloat16
         else:
             torch_dtype = torch.float32
     else:
@@ -353,50 +353,43 @@ def extract_dinov3_pooler_features(
 # from transformers import AutoProcessor, AutoModelForCausalLM, AutoImageProcessor, AutoModel
 # ・・・
 # load_dinov3_model / extract_dinov3_pooler_features は既に定義済みとする
-
 @torch.inference_mode()
-def extract_dinov3_all_layer_features(
-    model,
-    image_processor,
-    device: str,
-    image_paths: List[str],
-) -> List[np.ndarray]:
-    """
-    DINOv3 (例: facebook/dinov3-vitb16-pretrain-lvd1689m) の全レイヤー hidden_states を取得し，
-    各レイヤーごとに global pooling（パッチ平均→バッチ平均）した [N, D] の特徴行列を返す。
+def extract_dinov3_all_layer_features(model, image_processor, device: str, image_paths: List[str]) -> List[np.ndarray]:
+    feats_per_layer = None
+    model_dtype = next(model.parameters()).dtype  # ★
 
-    戻り値:
-      feats_per_layer: List[np.ndarray] で長さ = #layers+1（embedding層＋各Encoder層）
-                       feats_per_layer[i] の shape は [N, D]
-    """
-    feats_per_layer = None  # List[List[np.ndarray]]
     for p in tqdm(image_paths, desc="Extract DINOv3 all layers"):
         img = Image.open(p).convert("RGB")
         inputs = image_processor(images=img, return_tensors="pt")
         if "pixel_values" not in inputs:
             raise RuntimeError(f"DINOv3 processor outputs have no 'pixel_values' key for {p}")
-        pixel_values = inputs["pixel_values"].to(device)
 
-        # 全レイヤーの hidden states を取得
+        # ★ 入力 dtype をモデルに合わせる
+        pixel_values = inputs["pixel_values"].to(device, dtype=model_dtype)
+
         outputs = model(pixel_values=pixel_values, output_hidden_states=True, return_dict=True)
-        if not hasattr(outputs, "hidden_states") or outputs.hidden_states is None:
-            raise RuntimeError("DINOv3 model did not return hidden_states. Set output_hidden_states=True.")
+        hs = outputs.hidden_states
+        if hs is None:
+            raise RuntimeError("DINOv3 model did not return hidden_states.")
 
-        hs = outputs.hidden_states  # tuple(len = n_layers+1), 各 [B, N, D] or [B, D]
         per_image_vecs = []
         for h in hs:
+            # ★ pooling は float32 で
+            h = h.to(torch.float32)
+
             if h.dim() == 3:
-                # [B, N, D] -> パッチ平均 → [B, D]
-                v = h.mean(dim=1)
+                v = h.mean(dim=1)   # [B,D]
             elif h.dim() == 2:
-                # [B, D]
                 v = h
             else:
-                # 想定外の形状は落としてしまう
                 v = h.view(h.size(0), -1)
-            # バッチ平均（通常 B=1 だが一般化しておく）
+
             v = v.mean(dim=0)  # [D]
-            per_image_vecs.append(v.detach().to(torch.float32).cpu().numpy())
+
+            # ★ non-finite 除去
+            v = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
+
+            per_image_vecs.append(v.cpu().numpy().astype(np.float32))
 
         if feats_per_layer is None:
             feats_per_layer = [[] for _ in range(len(per_image_vecs))]
@@ -406,6 +399,4 @@ def extract_dinov3_all_layer_features(
     if feats_per_layer is None:
         raise RuntimeError("No features were extracted from DINOv3 model. Check inputs.")
 
-    # [num_images, D] にまとめる
-    feats_per_layer = [np.stack(layer_list, axis=0) for layer_list in feats_per_layer]
-    return feats_per_layer
+    return [np.stack(layer_list, axis=0) for layer_list in feats_per_layer]

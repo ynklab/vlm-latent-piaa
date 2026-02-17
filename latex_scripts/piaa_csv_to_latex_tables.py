@@ -53,10 +53,11 @@ class RowSpec:
 
 # Your rows (+ display names you can tweak)
 ROW_SPECS: List[RowSpec] = [
-    RowSpec("raw", "-", "Raw"),
-    RowSpec("bias", "small", "Bias"),
-    RowSpec("bias", "large", "Bias"),
+    RowSpec("raw", "-", "Raw Text"),
+    RowSpec("bias", "small", "Adjust-Bias"),
+    RowSpec("bias", "large", "Adjust-Bias"),
     RowSpec("vlm_fewshot_small", "small", "Few-shot"),
+    RowSpec("vlm_fewshot_large", "large", "Few-shot"),
     RowSpec("lora_per_user_small", "small", "LoRA"),
     RowSpec("lora_per_user_large", "large", "LoRA"),
     RowSpec("direct_linear_llm_text_L15", "small", "Linear-Hidden"),
@@ -249,8 +250,7 @@ def render_table(dataset_name: str,
     lines = []
     lines.append("\\begin{table*}[t]")
     lines.append("\\centering")
-    lines.append(f"\\caption{{User-average metrics on {dataset_name.upper()}. Best per-column $\\rho$ and $R^2$ are bolded.}}")
-    lines.append(f"\\label{{tab:{dataset_name}_useravg_metrics}}")
+    lines.append("\\small")
     lines.append("\\setlength{\\tabcolsep}{4pt}")
     lines.append("\\renewcommand{\\arraystretch}{1.15}")
     lines.append(f"\\begin{{tabular}}{{{col_spec}}}")
@@ -286,6 +286,8 @@ def render_table(dataset_name: str,
 
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}")
+    lines.append(f"\\caption{{User-average metrics on {dataset_name.upper()}. Best per-column $\\rho$ and $R^2$ are bolded.}}")
+    lines.append(f"\\label{{tab:{dataset_name}_useravg_metrics}}")
     lines.append("\\end{table*}")
     return "\n".join(lines)
 

@@ -286,7 +286,7 @@ def plot_one(
 
     plt.tight_layout()
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    fig.savefig(out_path, dpi=400, bbox_inches="tight")
+    fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[viz] saved: {out_path}")
     return True
@@ -300,7 +300,7 @@ def main():
     ap.add_argument("--metric", choices=["rho", "r2"], default="rho")
     ap.add_argument("--tick_every", type=int, default=10)
     ap.add_argument("--fig_w", type=float, default=5.0)
-    ap.add_argument("--fig_h", type=float, default=5.0)
+    ap.add_argument("--fig_h", type=float, default=4.0)
     args = ap.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -327,7 +327,7 @@ def main():
     for (model_id, family, support_set), g in df_all.groupby(["model_id", "family", "support_set"]):
         out_path = os.path.join(
             args.out_dir,
-            f"{sanitize(model_id)}__{sanitize(family)}__{sanitize(str(support_set))}__{args.metric}__V_LV_LT.png"
+            f"{sanitize(model_id)}__{sanitize(family)}__{sanitize(str(support_set))}__{args.metric}__V_LV_LT.pdf"
         )
         plot_one(
             df=g,

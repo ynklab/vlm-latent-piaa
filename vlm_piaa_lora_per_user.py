@@ -62,6 +62,20 @@ def set_seed(seed: int = 42):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
+def load_img(path: str, resize: bool, max_side: int) -> Image.Image:
+    img = Image.open(path).convert("RGB")
+    if not resize:
+        return img
+
+    w, h = img.size
+    m = max(w, h)
+    if m <= max_side:
+        return img
+
+    scale = max_side / float(m)
+    new_w = max(1, int(round(w * scale)))
+    new_h = max(1, int(round(h * scale)))
+    return img.resize((new_w, new_h), Image.BICUBIC)
 
 def parse_float_from_text(text: str) -> float:
     m = re.search(r"[-+]?\d+(\.\d+)?", text)
@@ -83,10 +97,12 @@ class UserPIAALoRADataset(Dataset):
     - __getitem__ で (input_ids, attention_mask, labels) を返す。
     """
 
-    def __init__(self, items, processor, device):
+    def __init__(self, items, processor, device, resize_image: bool, max_side: int):
         self.items = items
         self.processor = processor
         self.device = device
+        self.resize_image = resize_image
+        self.max_side = max_side
 
     def __len__(self):
         return len(self.items)
@@ -113,7 +129,7 @@ class UserPIAALoRADataset(Dataset):
 
     def __getitem__(self, idx):
         item = self.items[idx]
-        img = Image.open(item["image_path"]).convert("RGB")
+        img = load_img(item["image_path"], self.resize_image, self.max_side)
         score = float(item["score"])
 
         messages = self._build_messages(img, score)
@@ -246,6 +262,17 @@ def main():
         required=True,
         help="Path to output CSV for per-user test predictions.",
     )
+    ap.add_argument(
+        "--resize_image",
+        action="store_true",
+        help="If set, resize images so that max(width,height) <= --max_side (to reduce image tokens / VRAM).",
+    )
+    ap.add_argument(
+        "--max_side",
+        type=int,
+        default=1024,
+        help="Max side length used when --resize_image is enabled.",
+    )
     args = ap.parse_args()
 
     set_seed(args.seed)
@@ -354,7 +381,13 @@ def main():
         model.to(device)
         model.train()
 
-        train_dataset = UserPIAALoRADataset(train_examples, processor, device)
+        train_dataset = UserPIAALoRADataset(
+            train_examples,
+            processor,
+            device,
+            resize_image=args.resize_image,
+            max_side=args.max_side,
+        )
         train_loader = DataLoader(
             train_dataset,
             batch_size=args.batch_size,
@@ -397,7 +430,7 @@ def main():
         # --- Evaluation for this user ---
         model.eval()
         for item in tqdm(eval_items, desc=f"  Eval user={user_id}", leave=False):
-            img = Image.open(item["image_path"]).convert("RGB")
+            img = load_img(item["image_path"], args.resize_image, args.max_side)
             messages = [
                 {
                     "role": "user",

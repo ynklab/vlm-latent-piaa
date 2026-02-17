@@ -156,11 +156,9 @@ def plot_one_json(json_path: str, out_dir: str, split: str, metric: str) -> None
 
     x_pos, x_labels, boundary = _make_xticks(vision_layers, text_layers)
 
-    # ---- xticks: 5つおき + V_0 と LT_1 は必ず表示 ----
-    tick_idx = set()
-    for i in range(len(x_labels)):
-        if i % 5 == 0:
-            tick_idx.add(i)
+    # ---- xticks: 10つおき + V_0 と LT_1 は必ず表示 ----
+    tick_every = 10
+    tick_idx = set(i for i in range(len(x_labels)) if i % tick_every == 0)
 
     # 必須: V_0 は index 0、LT_1 は boundary + index_of_text_layer(=1)
     # text_layers は LT_0 を除外済みなので、最初の text layer は LT_{text_layers[0]}。
@@ -178,7 +176,7 @@ def plot_one_json(json_path: str, out_dir: str, split: str, metric: str) -> None
 
     # ---- plot ----
     plt.close("all")
-    fig, ax = plt.subplots(figsize=(10.5, 5.0))   # ← 固定！
+    fig, ax = plt.subplots(figsize=(8, 5.0))   # ← 固定！
 
     # ---- color palette: avoid collisions even for >10 attrs ----
     # tab20 + tab20b + tab20c => 60 colors
@@ -246,15 +244,25 @@ def plot_one_json(json_path: str, out_dir: str, split: str, metric: str) -> None
     ax.set_xlim(-0.5, len(x_labels) - 0.5)
     ax.margins(x=0)
 
-    # legend outside
-    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=12, frameon=False)
+    # legend below the plot (inside figure area)
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.22),   # 下に出す
+        ncol=4,                        # 1行に詰める列数（適宜調整）
+        fontsize=12,
+        frameon=False,
+        handlelength=1.5,
+        columnspacing=0.8,
+    )
 
+    # make room at bottom for legend
     plt.tight_layout()
+    fig.subplots_adjust(bottom=0.28)   # ← legend のために下余白を確保
     os.makedirs(out_dir, exist_ok=True)
 
-    out_name = f"{stem}__{split}__{metric}__vision_to_llm_text.png"
+    out_name = f"{stem}__{split}__{metric}__vision_to_llm_text.pdf"
     out_path = os.path.join(out_dir, out_name)
-    fig.savefig(out_path, dpi=400, bbox_inches="tight")
+    fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[save] {out_path}")
 

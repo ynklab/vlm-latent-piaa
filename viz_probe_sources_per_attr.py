@@ -158,7 +158,7 @@ def plot_attr(
     src_to_layer: Dict[str, Dict[int, float]],
     split: str,
     metric: str,
-    out_png: str,
+    out_pdf: str,
 ):
     # Determine layer universe
     vision_layers = sorted(src_to_layer.get("vision", {}).keys())
@@ -190,7 +190,7 @@ def plot_attr(
 
     # fixed width figure (does not depend on number of layers)
     plt.close("all")
-    fig, ax = plt.subplots(figsize=(5.0, 5.0))
+    fig, ax = plt.subplots(figsize=(5.0, 4.0))
 
     # Plot V on V axis only
     if vision_layers:
@@ -257,10 +257,10 @@ def plot_attr(
     )
 
     plt.tight_layout()
-    os.makedirs(os.path.dirname(out_png), exist_ok=True)
-    fig.savefig(out_png, dpi=400, bbox_inches="tight")
+    os.makedirs(os.path.dirname(out_pdf), exist_ok=True)
+    fig.savefig(out_pdf, bbox_inches="tight")
     plt.close(fig)
-    print(f"[save] {out_png}")
+    print(f"[save] {out_pdf}")
 
 
 # ------------ main ------------
@@ -310,11 +310,11 @@ def main():
 
         for attr in attr_names:
             src_to_layer = collect_attr_points(d, attr=attr, split=args.split, metric=args.metric)
-            out_png = os.path.join(
+            out_pdf = os.path.join(
                 model_dir,
-                f"{sanitize(attr)}__{args.split}__{args.metric}.png"
+                f"{sanitize(attr)}__{args.split}__{args.metric}.pdf"
             )
-            plot_attr(model_name, attr, src_to_layer, args.split, args.metric, out_png)
+            plot_attr(model_name, attr, src_to_layer, args.split, args.metric, out_pdf)
 
     print("[done]")
 

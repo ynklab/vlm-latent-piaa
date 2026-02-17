@@ -45,6 +45,14 @@ SOURCE_SYMBOL = {
     "llm_text_tail": r"L\tau",
 }
 
+PROMPT_MODES = [
+    ("base", "Base"),
+    ("format", "Numeric Format"),
+    ("attributes", "Attribute List"),
+    ("unrelated", "Unrelated")
+]
+
+
 def fmt_src_layer(src: str, layer: int, bold: bool) -> str:
     sym = SOURCE_SYMBOL.get(src, src)
     if bold:
@@ -155,7 +163,7 @@ def render_table_star_tabularx(
     label: str,
 ) -> str:
     # first column = attribute (left), others = X columns
-    col_spec = "l " + f"*{{{len(prompt_modes)}}}{{>{{\\centering\\arraybackslash}}X}}"
+    col_spec = "l " + f"*{{{len(PROMPT_MODES)}}}{{>{{\\centering\\arraybackslash}}X}}"
 
     lines = []
     lines.append("\\begin{table*}[t]")
@@ -168,15 +176,15 @@ def render_table_star_tabularx(
 
     # header rows:
     # Row 1: prompt modes
-    header = ["Attribute"] + [tex_escape(pm) for pm in prompt_modes]
+    header = ["Attribute"] + [tex_escape(pm) for (_, pm) in PROMPT_MODES]
     lines.append(" & ".join(header) + " \\\\")
     # Row 2: indicator of what numbers mean
-    lines.append(" & ".join([""] + [r"$\rho$ / $R^2$" for _ in prompt_modes]) + " \\\\")
+    lines.append(" & ".join([""] + [r"$\rho$ / $R^2$" for _ in PROMPT_MODES]) + " \\\\")
     lines.append("\\midrule")
 
     for a in attributes:
         row = [tex_escape(a)]
-        for pm in prompt_modes:
+        for (pm, _) in PROMPT_MODES:
             row.append(cell.get((a, pm), "--"))
         lines.append(" & ".join(row) + " \\\\")
     lines.append("\\bottomrule")

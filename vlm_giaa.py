@@ -76,6 +76,21 @@ def set_seed(seed: int = 42):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
+def load_img(path: str, resize: bool, max_side: int) -> Image.Image:
+    img = Image.open(path).convert("RGB")
+    if not resize:
+        return img
+
+    w, h = img.size
+    m = max(w, h)
+    if m <= max_side:
+        return img
+
+    scale = max_side / float(m)
+    new_w = max(1, int(round(w * scale)))
+    new_h = max(1, int(round(h * scale)))
+    return img.resize((new_w, new_h), Image.BICUBIC)
+
 
 def build_inputs(processor, image: Image.Image, prompt: str, device: torch.device):
     """
@@ -135,6 +150,8 @@ def run_giaa_for_items(
     items,
     prompt: str,
     quick: int | None = None,
+    resize_image: bool = False,
+    max_side: int = 1024,
 ):
     """
     items: list of objects with .image_path attribute (PARAItem / LAPISItem)
@@ -149,7 +166,7 @@ def run_giaa_for_items(
     rows = []
 
     for item in tqdm(items, desc="GIAA[all]"):
-        img = Image.open(item.image_path).convert("RGB")
+        img = load_img(item.image_path, resize_image, max_side)
         inputs = build_inputs(processor, img, prompt, device)
 
         with torch.inference_mode():
@@ -222,6 +239,18 @@ def main():
         default=None,
         help="If set, evaluate at most N images (all splits combined) for each model (debug mode).",
     )
+    ap.add_argument(
+        "--resize_image",
+        action="store_true",
+        help="If set, resize images so that max(width,height) <= --max_side before feeding to the VLM.",
+    )
+    ap.add_argument(
+        "--max_side",
+        type=int,
+        default=1024,
+        help="Max side length for image resizing when --resize_image is enabled.",
+    )
+    
     args = ap.parse_args()
 
     set_seed(args.seed)
@@ -284,6 +313,8 @@ def main():
             items=items,
             prompt=FORMAT_PROMPT,
             quick=args.quick,
+            resize_image=args.resize_image,
+            max_side=args.max_side,
         )
 
         for r in rows:

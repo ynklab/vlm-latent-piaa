@@ -29,13 +29,13 @@ Usage examples:
   python plot_annotator_piaa_agreement_hist.py \
     --dataset para \
     --dataset_dir datasets/PARA \
-    --out_png runs/para_annotator_agreement_hist.png
+    --out_file runs/para_annotator_agreement_hist.png
 
   # LAPIS, Spearman, leave-one-out GT, min 30 ratings per annotator
   python plot_annotator_piaa_agreement_hist.py \
     --dataset lapis \
     --dataset_dir datasets/LAPIS \
-    --out_png runs/lapis_annotator_agreement_hist_loo.png \
+    --out_file runs/lapis_annotator_agreement_hist_loo.png \
     --leave_one_out \
     --min_items 30
 """
@@ -160,14 +160,14 @@ def compute_annotator_correlations(
     return rhos
 
 
-def plot_histogram(rhos: List[float], out_png: str, title: str):
+def plot_histogram(rhos: List[float], out_file: str, title: str):
     if not rhos:
         raise RuntimeError("No valid per-annotator correlations to plot.")
 
     rhos_arr = np.array(rhos, dtype=float)
 
     plt.close("all")
-    fig, ax = plt.subplots(figsize=(5, 5))
+    fig, ax = plt.subplots(figsize=(5, 4))
     ax.hist(rhos_arr, bins=30, range=(-1.0, 1.0), alpha=0.75, edgecolor="black")
     ax.set_xlim(-1.0, 1.0)
     ax.set_xlabel("Correlation with GIAA scores", fontsize=18)
@@ -194,10 +194,10 @@ def plot_histogram(rhos: List[float], out_png: str, title: str):
     # )
 
     plt.tight_layout()
-    os.makedirs(os.path.dirname(out_png) or ".", exist_ok=True)
-    fig.savefig(out_png, dpi=400)
+    os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
+    fig.savefig(out_file)
     plt.close(fig)
-    print(f"[save] histogram -> {out_png}")
+    print(f"[save] histogram -> {out_file}")
     print("[stats]")
     print(txt.replace("\n", "  "))
 
@@ -218,7 +218,7 @@ def main():
         help="Dataset root directory (datasets/PARA or datasets/LAPIS).",
     )
     ap.add_argument(
-        "--out_png",
+        "--out_file",
         required=True,
         help="Path to output PNG file for the histogram.",
     )
@@ -262,7 +262,7 @@ def main():
     # title = f"{dataset_label}: annotator vs GT PIAA {args.metric.title()} correlation{loo_label}"
     title = dataset_label
 
-    plot_histogram(rhos, args.out_png, title)
+    plot_histogram(rhos, args.out_file, title)
 
 
 if __name__ == "__main__":
