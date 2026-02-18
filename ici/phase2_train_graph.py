@@ -592,6 +592,7 @@ def main():
             "use_external": args.use_external,
             "user_id_to_idx": user_id_to_idx,
             "cat_vocab_sizes": cat_vocab_sizes if args.use_external else None,
+            "cat_vocab": cat_vocab if args.use_external else None,
         }
     }, args.out_ckpt)
 
