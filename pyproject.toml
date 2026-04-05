@@ -24,7 +24,7 @@ dependencies = [
     "scipy",
     "scikit-learn",
     "matplotlib",
-    "triton @ file:/work/gh35/h35008/triton/python",
+    "triton @ file:/work/gh35/h35008/triton-cu126/python",
 ]
 
 [project.optional-dependencies]

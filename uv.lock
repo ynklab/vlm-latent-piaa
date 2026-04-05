@@ -2394,7 +2394,7 @@ wheels = [
 [[package]]
 name = "triton"
 version = "3.2.0+git4b3bb1f8"
-source = { directory = "../triton/python" }
+source = { directory = "../triton-cu126/python" }
 
 [package.metadata]
 requires-dist = [
@@ -2494,7 +2494,7 @@ requires-dist = [
     { name = "torch", specifier = "==2.6.0+cu126", index = "https://download.pytorch.org/whl/cu126" },
     { name = "torchvision" },
     { name = "transformers" },
-    { name = "triton", directory = "../triton/python" },
+    { name = "triton", directory = "../triton-cu126/python" },
 ]
 provides-extras = ["dev"]
 
