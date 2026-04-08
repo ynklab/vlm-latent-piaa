@@ -23,14 +23,14 @@ Notes:
 Example usage:
 
   # PARA, Gemma3
-  python vlm_giaa.py \
+  python -m scripts.vlm.vlm_giaa \
     --dataset para \
     --gemma_model_id google/gemma-3-4b-it \
     --dataset_dir datasets/PARA \
     --out_csv runs/giaa_gemma3_4b_para.csv
 
   # LAPIS, Qwen3-VL
-  python vlm_giaa.py \
+  python -m scripts.vlm.vlm_giaa \
     --dataset lapis \
     --qwen_model_id Qwen/Qwen3-VL-2B-Instruct \
     --dataset_dir datasets/LAPIS \

@@ -10,13 +10,13 @@ AADB / PARA データセット中の各 attribute のヒストグラムを描画
 
 実行例:
   # AADB だけ
-  python plot_attr_histograms.py --dataset aadb --out_dir viz_hists
+  python -m scripts.visualization.plot_attr_histograms --dataset aadb --out_dir viz_hists
 
   # PARA だけ
-  python plot_attr_histograms.py --dataset para --out_dir viz_hists
+  python -m scripts.visualization.plot_attr_histograms --dataset para --out_dir viz_hists
 
   # 両方
-  python plot_attr_histograms.py --dataset both --out_dir viz_hists
+  python -m scripts.visualization.plot_attr_histograms --dataset both --out_dir viz_hists
 """
 
 import os

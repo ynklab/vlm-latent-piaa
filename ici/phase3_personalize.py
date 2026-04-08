@@ -13,13 +13,11 @@ Paper settings:
 """
 
 import os
-import sys
 import csv
 import math
 import copy
 import argparse
 import json
-from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -32,11 +30,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
 import torchvision.models as models
-
-# 実行ディレクトリを基準にする
-BASE_DIR = Path(__file__).resolve().parent.parent
-sys.path.append(str(BASE_DIR))
-
 
 from utils.para import get_personalized_para_dataset
 from utils.lapis import get_personalized_lapis_dataset

@@ -5,8 +5,8 @@
 Bootstrap-based significance testing for PIAA methods.
 
 Input:
-  - A directory containing CSVs produced by piaa_from_giaa_para.py
-    (same as eval_piaa_baselines.py expects), i.e. files with columns:
+  - A directory containing PIAA prediction CSVs
+    (same as scripts.piaa.eval_piaa_baselines expects), i.e. files with columns:
 
       user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
 
@@ -30,7 +30,7 @@ Pipeline:
 
 Example:
 
-  python bootstrap_piaa_significance.py \
+  python -m scripts.reporting.bootstrap_piaa_significance \
     --input_dir runs/piaa_baseline_gemma3_small/ \
     --out_csv runs/bootstrap_significance_gemma3_small.csv \
     --metrics rho r2 \

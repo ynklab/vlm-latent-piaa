@@ -5,7 +5,8 @@
 Extract hidden feature vectors for a given (dataset, projection) and save them as a .npz file.
 
 前提:
-  - --proj_file には AADB で学習した射影ファイル (train_attr_projection_aadb.py の出力) が渡される。
+  - --proj_file には AADB で学習した射影ファイル
+    (`scripts.probing.train_attr_projection_aadb` の出力) が渡される。
     そこから以下を読み取る:
       * model_id
       * feature_source
@@ -40,7 +41,7 @@ mode:
 
 Example usage:
 
-  python extract_feature_vectors.py \
+  python -m scripts.probing.extract_feature_vectors \
     --dataset para \
     --dataset_dir datasets/PARA \
     --mode all \

@@ -5,7 +5,7 @@
 Visualize pair-grid PIAA summary CSVs as source-pair heatmaps.
 
 Example:
-  python viz_piaa_pair_source_heatmap.py \
+  python -m scripts.visualization.viz_piaa_pair_source_heatmap \
     --input_root outputs/piaa_pair/lapis \
     --row_source vision \
     --col_source llm_text \

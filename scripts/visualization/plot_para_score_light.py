@@ -5,7 +5,7 @@
 Plot PARA: 'score' vs 'light' using utils.para.get_para_dataset.
 
 Usage:
-  python plot_para_score_light.py --dataset_dir datasets/PARA --out_png out/para_score_light_scatter.png
+  python -m scripts.visualization.plot_para_score_light --dataset_dir datasets/PARA --out_png out/para_score_light_scatter.png
 
 Options:
   --dataset_dir   path to PARA dataset root (default: datasets/PARA)

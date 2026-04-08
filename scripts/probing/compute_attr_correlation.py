@@ -6,8 +6,8 @@ Compute correlation matrices (Spearman and/or Pearson) between aesthetic attribu
 for PARA / AADB and save CSV + heatmap PNG.
 
 Usage examples:
-  python compute_attr_correlation.py --dataset para --dataset_dir datasets/PARA --out_dir runs/stats --method both
-  python compute_attr_correlation.py --dataset aadb --dataset_dir datasets/aadb --out_dir runs/stats --method spearman
+  python -m scripts.probing.compute_attr_correlation --dataset para --dataset_dir datasets/PARA --out_dir runs/stats --method both
+  python -m scripts.probing.compute_attr_correlation --dataset aadb --dataset_dir datasets/aadb --out_dir runs/stats --method spearman
 """
 
 import os

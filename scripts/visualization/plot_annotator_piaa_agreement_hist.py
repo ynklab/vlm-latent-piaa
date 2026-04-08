@@ -26,13 +26,13 @@ Outputs:
 Usage examples:
 
   # PARA, Spearman, simple mean as GT
-  python plot_annotator_piaa_agreement_hist.py \
+  python -m scripts.visualization.plot_annotator_piaa_agreement_hist \
     --dataset para \
     --dataset_dir datasets/PARA \
     --out_file runs/para_annotator_agreement_hist.png
 
   # LAPIS, Spearman, leave-one-out GT, min 30 ratings per annotator
-  python plot_annotator_piaa_agreement_hist.py \
+  python -m scripts.visualization.plot_annotator_piaa_agreement_hist \
     --dataset lapis \
     --dataset_dir datasets/LAPIS \
     --out_file runs/lapis_annotator_agreement_hist_loo.png \

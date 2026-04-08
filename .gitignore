@@ -2,6 +2,10 @@ datasets/
 *.sh
 test.*
 .env
+.venv/
+requirements.local.txt
+.codex
+.txt
 outputs/
 viz/
 viz_hists/

@@ -14,13 +14,13 @@ Uses:
 Usage examples:
 
   # PARA
-  python plot_general_vs_personal_variance.py \
+  python -m scripts.visualization.plot_general_vs_personal_variance \
     --dataset para \
     --dataset_dir datasets/PARA \
     --out_png runs/para_general_vs_personal_var.png
 
   # LAPIS
-  python plot_general_vs_personal_variance.py \
+  python -m scripts.visualization.plot_general_vs_personal_variance \
     --dataset lapis \
     --dataset_dir datasets/LAPIS \
     --out_png runs/lapis_general_vs_personal_var.png

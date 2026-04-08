@@ -26,7 +26,7 @@ The learned projection (scaler + coef + intercept + attr_names + metadata) is sa
 
 Usage example:
 
-  python train_attr_projection_aadb.py \
+  python -m scripts.probing.train_attr_projection_aadb \
     --model_id Qwen/Qwen3-VL-2B-Instruct \
     --feature_source llm_text \
     --feature_layer 20 \

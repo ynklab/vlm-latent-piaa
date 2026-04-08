@@ -22,7 +22,7 @@ Now supports probing multiple sources in a single job:
 
 Example:
 
-  python probe_image_aug_sensitivity.py \
+  python -m scripts.probing.probe_image_aug_sensitivity \
       --dataset aadb \
       --dataset_dir datasets/aadb \
       --model_id Qwen/Qwen3-VL-2B-Instruct \

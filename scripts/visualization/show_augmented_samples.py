@@ -16,13 +16,13 @@ AADB / PARA の画像からランダムに1枚サンプルし、
 例:
 
   # AADB から1枚サンプル
-  python show_augmented_samples.py \
+  python -m scripts.visualization.show_augmented_samples \
     --dataset aadb \
     --dataset_dir datasets/aadb \
     --out_path viz_aug_samples/aadb_sample.png
 
   # PARA から1枚サンプル
-  python show_augmented_samples.py \
+  python -m scripts.visualization.show_augmented_samples \
     --dataset para \
     --dataset_dir datasets/PARA \
     --out_path viz_aug_samples/para_sample.png

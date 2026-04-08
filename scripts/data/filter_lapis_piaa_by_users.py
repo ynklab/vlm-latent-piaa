@@ -6,7 +6,7 @@ Filter PIAA experiment CSVs for LAPIS so that they only contain users
 present in get_personalized_lapis_dataset(seed, dataset_dir).
 
 Usage:
-  python filter_lapis_piaa_by_users.py \
+  python -m scripts.data.filter_lapis_piaa_by_users \
     --input_dir runs/piaa_results_lapis \
     --output_dir runs/piaa_results_lapis_filtered \
     --dataset_dir datasets/LAPIS \

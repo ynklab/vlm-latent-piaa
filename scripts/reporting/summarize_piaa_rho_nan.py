@@ -19,7 +19,7 @@ For each valid CSV file in --input_dir:
        - mean rho if NaN users are excluded from the denominator
 
 Example:
-  ./.venv/bin/python summarize_piaa_rho_nan.py \
+  python -m scripts.reporting.summarize_piaa_rho_nan \
     --input_dir outputs/piaa/para/gemma3-4b \
     --out_csv outputs/viz/rho_nan_summary/para_gemma3-4b.csv
 """
