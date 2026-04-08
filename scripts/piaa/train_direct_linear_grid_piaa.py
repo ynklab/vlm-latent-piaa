@@ -5,21 +5,21 @@
 Train per-user direct linear models (Ridge) for PIAA on PARA/LAPIS using mm_embed features,
 for ALL (feature_source, feature_layer) combinations in a single run.
 
-目的:
-  - GIAA 予測を一切使わず，VLMの埋め込み z から直接ユーザのスコア y (PIAA) を予測する。
-  - 各 feature_source × layer_idx について per-user Ridge を学習し，
-    test セットに対する予測をCSVに吐き出す。
+Purpose:
+  - Predict the user score y (PIAA) directly from the VLM embedding z, without using any GIAA prediction.
+  - Train per-user Ridge models for each feature_source x layer_idx,
+    and write predictions for the test set to CSV.
 
-対応データセット:
+Supported datasets:
   - PARA  : utils.para.get_personalized_para_dataset
   - LAPIS : utils.lapis.get_personalized_lapis_dataset
 
-出力:
-  - --out_dir の中に feature_source × layer ごとに1ファイル:
+Output:
+  - one file per feature_source x layer inside --out_dir:
       direct_linear_<source>_L<layer>.csv
-    CSV形式:
+    CSV format:
       user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
-    ※ giaa はここでは使わないので NaN を入れる。
+    Note: `giaa` is unused here, so it is filled with NaN.
 """
 
 import os
@@ -80,7 +80,7 @@ def extract_feature_vector_from_pools(
     layer_idx: int,
 ) -> np.ndarray:
     """
-    mm_embed.extract_all_pools の AllPools から source/layer を指定して [D] ベクトルを取り出す。
+    Extract the [D] vector for the specified source/layer from mm_embed.extract_all_pools.
     """
     if source == "llm_text":
         vec = pools.llm_text[layer_idx]
@@ -93,7 +93,7 @@ def extract_feature_vector_from_pools(
             raise RuntimeError("vision_layers is None; vision source not available for this model.")
         vec = pools.vision_layers[layer_idx]
     elif source == "bridge_text":
-        vec = pools.bridge_text[0]  # layer_idx は無視
+        vec = pools.bridge_text[0]  # layer_idx is ignored
     elif source == "bridge_visual":
         vec = pools.bridge_visual[0]
     else:
@@ -104,8 +104,8 @@ def extract_feature_vector_from_pools(
 
 def get_layer_range_for_source(example_pools, source: str) -> List[int]:
     """
-    source ごとに利用可能な layer index のリストを返す。
-    bridge_* は [0] のみ。
+    Return the list of available layer indices for each source.
+    bridge_* only supports [0].
     """
     if source == "llm_text":
         return list(range(len(example_pools.llm_text)))
@@ -189,7 +189,7 @@ def main():
     )
     args = ap.parse_args()
 
-    # dataset_dir デフォルト
+    # Default dataset_dir
     os.makedirs(args.out_dir, exist_ok=True)
     if args.dataset_dir is None:
         if args.dataset == "para":
@@ -197,7 +197,7 @@ def main():
         else:
             args.dataset_dir = "datasets/LAPIS"
 
-    # 1) Personalized データ読み込み
+    # 1) Load personalized data
     print(f"[info] loading personalized {args.dataset.upper()} dataset...")
     if args.dataset == "para":
         personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
@@ -207,14 +207,14 @@ def main():
     all_user_ids = sorted(personalized.keys())
     print(f"[info] num users in personalized dataset: {len(all_user_ids)}")
 
-    # quick: ユーザ数を制限
+    # quick: limit the number of users
     if args.quick is not None and args.quick < len(all_user_ids):
         user_ids = all_user_ids[:args.quick]
         print(f"[info] quick mode: using first {len(user_ids)} users out of {len(all_user_ids)}")
     else:
         user_ids = all_user_ids
 
-    # 2) 対象ユーザに出現する全画像パスを収集
+    # 2) Collect all image paths that appear for the selected users
     all_paths = set()
     for user_id in user_ids:
         pdata = personalized[user_id]
@@ -222,7 +222,7 @@ def main():
             all_paths.add(item.image_path)
     print(f"[info] total unique images in selected users' splits: {len(all_paths)}")
 
-    # 3) mm_embed 用モデルロード
+    # 3) Load the model used by mm_embed
     print(f"[info] loading VLM for features: {args.model_id}")
     model, processor = load_mm_model(args.model_id, dtype="auto", device_map="auto", attn_impl=None)
     model.eval()
@@ -230,7 +230,7 @@ def main():
     prompt = make_prompt(args.prompt_mode)
     print(f"[info] prompt_mode={args.prompt_mode}, prompt={prompt!r}")
 
-    # 4) AllPools をキャッシュ
+    # 4) Cache AllPools
     pools_cache: Dict[str, object] = {}
     print("[info] extracting AllPools for all selected images...")
     for path in tqdm(sorted(all_paths), desc="Embed"):
@@ -243,7 +243,7 @@ def main():
     if not pools_cache:
         raise RuntimeError("No features extracted. Check dataset_dir / seed / model.")
 
-    # 5) sourceごとの layer index 範囲を決める（例として1つの AllPools を使う）
+    # 5) Determine the layer-index range for each source using one example AllPools object
     example_pools = next(iter(pools_cache.values()))
     source_to_layers: Dict[str, List[int]] = {}
     for src in args.feature_sources:
@@ -257,10 +257,10 @@ def main():
     if not source_to_layers:
         raise RuntimeError("No valid feature sources with layers found.")
 
-    # Helper: ユーザごとの support/test を source/layer に応じて組み立てる
+    # Helper: build per-user support/test arrays for a given source/layer
     def build_support_and_test(user_id, source: str, layer_idx: int) -> Tuple[np.ndarray, np.ndarray, List[Tuple[str, float]]]:
         """
-        戻り値:
+        Returns:
           X_support: [Ns, D], y_support: [Ns]
           test_rows: List[(image_path, user_score)] for test items
         """
@@ -296,7 +296,7 @@ def main():
 
         return X_support, y_support, test_rows
 
-    # 6) 各 (source, layer) について per-user Ridge を学習＆CSV出力
+    # 6) Train per-user Ridge models for each (source, layer) and write CSV output
     for source, layers in source_to_layers.items():
         for layer_idx in layers:
             method_name = f"direct_linear_{source}_L{layer_idx}"
@@ -308,14 +308,14 @@ def main():
                 if len(y_support) < 2:
                     continue
 
-                # y ~ z を RidgeCV で学習
+                # Train y ~ z with RidgeCV
                 pipe = make_pipeline(
                     StandardScaler(with_std=True),
                     RidgeCV(alphas=np.logspace(-3, 3, 13))
                 )
                 pipe.fit(X_support, y_support)
 
-                # test 予測
+                # Test prediction
                 for path, user_score in test_rows:
                     pools = pools_cache[path]
                     feat = extract_feature_vector_from_pools(pools, source, layer_idx)
@@ -328,13 +328,13 @@ def main():
                             "model_id": args.model_id,
                             "support_set": args.support_set,
                             "method": method_name,
-                            "giaa": math.nan,        # direct なので GIAA は未使用
+                            "giaa": math.nan,        # direct model; GIAA is unused
                             "piaa_pred": piaa_pred,
                             "user_score": user_score,
                         }
                     )
 
-            # CSV 保存
+            # Save CSV
             if not rows:
                 print(f"[grid] No rows for source={source}, layer={layer_idx}, skip saving.")
                 continue

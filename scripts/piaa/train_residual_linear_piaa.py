@@ -4,30 +4,27 @@
 """
 Train per-user residual linear models (Ridge) for PIAA on PARA using mm_embed features.
 
-Residual 定義:
-  target_score を
-    - piaa   : user_score (個人 PIAA)
-    - giaa_gt: データセットの GIAA 平均 (aestheticScore_mean)
-  としたとき、
+Residual definition:
+  Let `target_score` be one of:
+    - `piaa`: the user score (personalized PIAA)
+    - `giaa_gt`: the dataset-level mean GIAA score (`aestheticScore_mean`)
 
     residual = target_score - GIAA_pred
 
-  をターゲットに Ridge 回帰を行い、
-  test では
+We fit Ridge regression on this residual target, and at test time:
     PIAA_pred = GIAA_pred + residual_pred
-  として最終予測を得る。
+to obtain the final prediction.
 
-これにより、
-  - target_score = piaa   の場合: 個人好みを反映した残差学習
-  - target_score = giaa_gtの場合: global GIAA を補正する残差学習
-を同一スクリプトで比較できる。
+This allows the same script to compare:
+  - `target_score = piaa`: residual learning for personalized preference
+  - `target_score = giaa_gt`: residual learning that corrects global GIAA
 
-出力:
+Output:
   user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
 
-method 名:
-  - piaa   : residual_linear_<source>_L<layer>          （従来と同じ）
-  - giaa_gt: residual_linear_giaa_gt_<source>_L<layer> （区別できるように prefix を付与）
+Method name:
+  - `piaa`: `residual_linear_<source>_L<layer>` (same as before)
+  - `giaa_gt`: `residual_linear_giaa_gt_<source>_L<layer>`
 """
 
 import os

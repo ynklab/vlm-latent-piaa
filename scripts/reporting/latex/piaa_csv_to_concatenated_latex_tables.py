@@ -68,7 +68,7 @@ ROW_SPECS: List[RowSpec] = [
     RowSpec("hidden_attr_linear_llm_text_L15", "large", "Linear-Hidden (Reduce)"),
 ]
 
-# ここで “supportグループごとの並び順” を指定
+# Define the ordering of support groups here
 ORDER_BY_SUPPORT = {
     "-": ["raw"],
     "small": [

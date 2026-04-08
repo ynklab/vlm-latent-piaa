@@ -5,27 +5,27 @@
 Train per-user residual linear models (Ridge) for PIAA on PARA/LAPIS using mm_embed features,
 for ALL (feature_source, feature_layer) combinations in a single run.
 
-- 先に personalized データの対象ユーザーに出現する全画像に対して 1 回だけ mm_embed を通し、
-  AllPools をキャッシュする。
-- そのキャッシュを使って、指定された feature_source 各々について
-  利用可能な全レイヤー (layer index) について residual_linear (Ridge) を per-user で学習し、
-  test セットに対する予測を CSV に出力する。
+- First run mm_embed exactly once on all images that appear for the selected users in the personalized data,
+  and cache the resulting AllPools.
+- Then use that cache for each requested feature_source
+  to train per-user residual_linear (Ridge) models over all available layers,
+  and write test-set predictions to CSV.
 
-対応データセット:
+Supported datasets:
   - PARA  : utils.para.get_personalized_para_dataset
   - LAPIS : utils.lapis.get_personalized_lapis_dataset
 
-入力:
+Input:
   - GIAA CSV (from vlm_giaa.py) with columns:
       model_id, dataset, split, image_path, giaa, raw_output
   - dataset (para / lapis)
   - VLM (mm_embed) model_id
   - feature_sources (llm_text, vision, ...)
 
-出力:
-  - --out_dir の中に、feature_source × layer の各組み合わせごとに 1 つの CSV:
+Output:
+  - one CSV for each feature_source x layer combination inside --out_dir:
       residual_linear_<source>_L<layer>.csv
-    各行は:
+    each row is:
       user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
 """
 
@@ -151,7 +151,7 @@ def extract_feature_vector_from_pools(
             raise RuntimeError("vision_layers is None; vision source not available for this model.")
         vec = pools.vision_layers[layer_idx]
     elif source == "bridge_text":
-        vec = pools.bridge_text[0]  # layer_idx は無視
+        vec = pools.bridge_text[0]  # layer_idx is ignored
     elif source == "bridge_visual":
         vec = pools.bridge_visual[0]
     else:
@@ -165,8 +165,8 @@ def get_layer_range_for_source(
     source: str,
 ) -> List[int]:
     """
-    source ごとに利用可能な layer index のリストを返す。
-    bridge_* は [0] のみ。
+    Return the list of available layer indices for each source.
+    bridge_* only supports [0].
     """
     if source == "llm_text":
         return list(range(len(example_pools.llm_text)))
@@ -262,7 +262,7 @@ def main():
 
     os.makedirs(args.out_dir, exist_ok=True)
 
-    # dataset_dir デフォルト
+    # Default dataset_dir
     if args.dataset_dir is None:
         if args.dataset == "para":
             args.dataset_dir = "datasets/PARA"
@@ -342,7 +342,7 @@ def main():
         layer_idx: int,
     ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[str, float, float]]]:
         """
-        戻り値:
+        Returns:
           X_support: [Ns, D], y_support: [Ns]
           test_rows: List[(image_path, giaa, user_score)] for test items
         """

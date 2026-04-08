@@ -26,7 +26,7 @@ For each user u:
 Outputs a CSV with one row per user × test image:
   user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
 
-method 名:
+Method name:
   - target_score = piaa   : direct_linear_<source>_L<layer>
   - target_score = giaa_gt: direct_linear_giaa_gt_<source>_L<layer>
 """
@@ -193,14 +193,14 @@ def main():
     )
     args = ap.parse_args()
 
-    # dataset_dir デフォルト
+    # Default dataset_dir
     if args.dataset_dir is None:
         if args.dataset in ["para", "para_hard_users", "para_hard_images"]:
             args.dataset_dir = "datasets/PARA"
         else:
             args.dataset_dir = "datasets/LAPIS"
 
-    # 1) Personalized データ読み込み
+    # 1) Load personalized data
     print(f"[info] loading personalized {args.dataset.upper()} dataset...")
     if args.dataset == "para":
         personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
@@ -214,14 +214,14 @@ def main():
     all_user_ids = sorted(personalized.keys())
     print(f"[info] num users in personalized dataset: {len(all_user_ids)}")
 
-    # quick: ユーザ数を制限
+    # quick: limit the number of users
     if args.quick is not None and args.quick < len(all_user_ids):
         user_ids = all_user_ids[:args.quick]
         print(f"[info] quick mode: using first {len(user_ids)} users out of {len(all_user_ids)}")
     else:
         user_ids = all_user_ids
 
-    # 2) dataset-level GIAA ground truth を読み込み（必要なら）
+    # 2) Load dataset-level GIAA ground truth if needed
     image_to_giaa_gt: Dict[str, float] = {}
     if args.target_score == "giaa_gt":
         print(f"[info] loading dataset-level GIAA ground truth for {args.dataset.upper()} ...")
@@ -233,7 +233,7 @@ def main():
             image_to_giaa_gt[it.image_path] = float(it.score)
         print(f"[info] GIAA ground truth entries: {len(image_to_giaa_gt)}")
 
-    # 3) 対象ユーザに出現する全画像パスを収集
+    # 3) Collect all image paths that appear for the selected users
     all_paths = set()
     for user_id in user_ids:
         pdata = personalized[user_id]
@@ -241,7 +241,7 @@ def main():
             all_paths.add(item.image_path)
     print(f"[info] total unique images in selected users' splits: {len(all_paths)}")
 
-    # 4) mm_embed 用の VLM ロード
+    # 4) Load the VLM used by mm_embed
     print(f"[info] loading VLM for features: {args.model_id}")
     model, processor = load_mm_model(args.model_id, dtype="auto", device_map="auto", attn_impl=None)
     model.eval()
@@ -249,7 +249,7 @@ def main():
     prompt = make_prompt(args.prompt_mode)
     print(f"[info] prompt_mode={args.prompt_mode}, prompt={prompt!r}")
 
-    # 5) AllPools を全画像についてキャッシュ
+    # 5) Cache AllPools for all images
     pools_cache: Dict[str, object] = {}
     print("[info] extracting AllPools for all selected images...")
     for path in tqdm(sorted(all_paths), desc="Embed"):
@@ -262,7 +262,7 @@ def main():
     if not pools_cache:
         raise RuntimeError("No features extracted. Check dataset_dir / seed / model.")
 
-    # 6) ユーザごとに RidgeCV を train し test に適用
+    # 6) Train RidgeCV per user and apply it to the test split
     rows: List[dict] = []
     if args.target_score == "piaa":
         method_name = f"direct_linear_{args.feature_source}_L{args.feature_layer}"
@@ -277,7 +277,7 @@ def main():
             support_items = pdata.support_large
         test_items = pdata.test
 
-        # support セットの作成
+        # Build the support set
         X_support = []
         y_support = []
         for item in support_items:
@@ -298,7 +298,7 @@ def main():
                 target = user_score
             else:
                 if path not in image_to_giaa_gt:
-                    # データセット平均がない画像はスキップ
+                    # Skip images without dataset-level mean scores
                     continue
                 target = image_to_giaa_gt[path]
 
@@ -309,7 +309,7 @@ def main():
         y_support = np.array(y_support, dtype=np.float32)
 
         if len(y_support) < 2:
-            # 学習に十分なサンプルがないユーザはスキップ
+            # Skip users without enough training samples
             continue
 
         pipe = make_pipeline(
@@ -318,7 +318,7 @@ def main():
         )
         pipe.fit(X_support, y_support)
 
-        # test セット予測
+        # Predict on the test set
         for item in test_items:
             path = item.image_path
             if path not in pools_cache:
@@ -327,7 +327,7 @@ def main():
             feat = extract_feature_vector(pools, args.feature_source, args.feature_layer)
             z = feat[None, :]  # [1,D]
             piaa_pred = pipe.predict(z)[0]
-            # 評価用に always user_score をログしておく
+            # Always log user_score for evaluation
             user_score = float(item.score)
             rows.append(
                 {
@@ -336,13 +336,13 @@ def main():
                     "model_id": args.model_id,
                     "support_set": args.support_set,
                     "method": method_name,
-                    "giaa": math.nan,        # direct モデルなので GIAA予測は使わない
+                    "giaa": math.nan,        # Direct model; GIAA predictions are unused
                     "piaa_pred": piaa_pred,
                     "user_score": user_score,
                 }
             )
 
-    # 7) CSV 保存
+    # 7) Save CSV
     out_path = args.out_csv
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fieldnames = [

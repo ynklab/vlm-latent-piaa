@@ -4,8 +4,8 @@
 """
 Layerwise visualization for augmentation sensitivity.
 
-対象:
-  probe_image_aug_sensitivity.py の出力 JSON:
+Target:
+  Output JSON from probe_image_aug_sensitivity.py:
   {
     "config": { ... },
     "sources": {
@@ -32,14 +32,14 @@ Layerwise visualization for augmentation sensitivity.
     }
   }
 
-出力:
+Output:
   out_dir / <dataset> / <prompt_mode> / <model_id> /
     <source>__<attr>__<split>__<metric>.png
 
-各画像:
-  - x軸: layer index
-  - y軸: metric (rho/rmse/r2)
-  - 線: image_mode (orig / gray / tps) ごとの layerwise カーブ
+Each figure:
+  - x-axis: layer index
+  - y-axis: metric (rho/rmse/r2)
+  - lines: layerwise curves for each image_mode (orig / gray / tps)
 """
 
 import os
@@ -81,7 +81,7 @@ def collect_attr_names(source_entry: Dict) -> List[str]:
     modes = source_entry.get("modes", {})
     if not modes:
         return []
-    # orig を優先、なければ最初のモードを使う
+    # Prefer orig; otherwise use the first available mode
     if "orig" in modes:
         m = modes["orig"]
     else:
@@ -99,10 +99,10 @@ def collect_layerwise(
     metric: str,
 ):
     """
-    attr の layerwise metrics を取得する。
-    戻り値:
+    Get the layerwise metrics for one attribute.
+    Returns:
       layers: sorted layer indices
-      values: dict[mode] -> list[metric値] (len=layers)
+      values: dict[mode] -> list[metric values] (len=layers)
     """
     mode_to_layer_metrics: Dict[str, Dict[int, float]] = {}
 
@@ -126,9 +126,9 @@ def collect_layerwise(
     if not mode_to_layer_metrics:
         return [], {}
 
-    # 全モードの layer index の union をとる
+    # Take the union of layer indices across all modes
     all_layers = sorted({li for d in mode_to_layer_metrics.values() for li in d.keys()})
-    # この順序で各モードの値を並べる
+    # Arrange each mode's values in this order
     mode_to_values = {}
     for mode, d in mode_to_layer_metrics.items():
         mode_to_values[mode] = [d.get(li, np.nan) for li in all_layers]
@@ -156,7 +156,7 @@ def plot_layerwise_for_attr(
     plt.close("all")
     fig, ax = plt.subplots(figsize=figsize)
 
-    # 色はmatplotlibのデフォルトカラーサイクルに任せる
+    # Use matplotlib's default color cycle
     for mode, ys in mode_to_values.items():
         ax.plot(layers, ys, marker="o", markersize=3, linewidth=1.0, label=mode)
 
@@ -169,7 +169,7 @@ def plot_layerwise_for_attr(
     ax.legend(title="image_mode")
     ax.set_xticks(layers)
 
-    # y範囲を少しマージン付きで調整
+    # Add a small margin to the y-axis range
     all_vals = np.array([v for ys in mode_to_values.values() for v in ys if not np.isnan(v)], dtype=float)
     if all_vals.size > 0:
         ymin, ymax = float(np.nanmin(all_vals)), float(np.nanmax(all_vals))
@@ -254,7 +254,7 @@ def main():
                 print(f"[viz] no source={source} in {fp}, skip")
                 continue
 
-            # 属性リストを取得（only_attrs 指定があればフィルタ）
+            # Get the attribute list (filtered by only_attrs if provided)
             attr_names = collect_attr_names(source_entry)
             if args.only_attrs is not None:
                 attr_names = [a for a in attr_names if a in args.only_attrs]
@@ -262,7 +262,7 @@ def main():
                 print(f"[viz] no attributes to visualize for source={source} in {fp}, skip")
                 continue
 
-            # 利用可能な modes をフィルタ
+            # Filter available modes
             available_modes = list(source_entry.get("modes", {}).keys())
             modes = [m for m in args.modes if m in available_modes]
             if not modes:

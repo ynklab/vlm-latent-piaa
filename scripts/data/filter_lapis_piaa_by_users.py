@@ -56,18 +56,18 @@ def main():
     )
     args = ap.parse_args()
 
-    # 1) Personalized LAPIS から有効ユーザの集合を取得
+    # 1) Collect the valid user set from Personalized LAPIS.
     print(f"[info] loading personalized LAPIS users from seed={args.seed}, dataset_dir={args.dataset_dir}")
     personalized = get_personalized_lapis_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
     valid_user_ids = set(personalized.keys())
     print(f"[info] num valid users = {len(valid_user_ids)}")
 
-    # 2) 入出力ディレクトリの準備
+    # 2) Prepare input and output directories.
     if not os.path.isdir(args.input_dir):
         raise RuntimeError(f"input_dir is not a directory: {args.input_dir}")
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # 3) input_dir 内の CSV をすべて処理
+    # 3) Process every CSV in input_dir.
     files = [f for f in os.listdir(args.input_dir) if f.lower().endswith(".csv")]
     print(f"[info] found {len(files)} CSV files in {args.input_dir}")
 
@@ -80,7 +80,7 @@ def main():
             continue
 
         if "user_id" not in df.columns:
-            # 集計系 (summary_metrics.csv 等) は user_id を持たないのでスキップ
+            # Aggregate files such as summary_metrics.csv do not have user_id.
             print(f"[info] skip {in_path} (no 'user_id' column)")
             continue
 

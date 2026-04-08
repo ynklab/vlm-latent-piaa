@@ -7,7 +7,7 @@ as 10x10 confusion-matrix-style heatmaps with bin width 0.5.
 
 Input:
   - A directory containing PIAA baseline CSVs (from piaa_from_giaa.py,
-    residual/direct/hidden_attr/LoRA/CoT 等) with columns:
+    residual/direct/hidden_attr/LoRA/CoT, etc.) with columns:
 
       user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score, ...
 
@@ -136,7 +136,7 @@ def pick_representative_users(df_user: pd.DataFrame, top_k: int, mid_k: int, bot
     """
     df_user: per-user metrics DataFrame with columns ['user_id', 'rho', 'r2', 'n_items'].
     Return dict with keys: 'top', 'mid', 'bottom', each a list of user_id.
-    Metric is always rho（降順）。
+    Metric is always rho (descending).
     """
     if df_user.empty:
         return {"top": [], "mid": [], "bottom": []}
@@ -162,7 +162,7 @@ def pick_representative_users(df_user: pd.DataFrame, top_k: int, mid_k: int, bot
     return {"top": top_users, "mid": mid_users, "bottom": bottom_users}
 
 
-# --- 10-bin (幅0.5) の設定: edges 0.75, 1.25, ..., 5.75 / centers 1.0,1.5,...,5.5 ---
+# --- 10-bin setup with width 0.5: edges 0.75, 1.25, ..., 5.75 / centers 1.0, 1.5, ..., 5.5 ---
 
 BIN_EDGES = np.arange(0.75, 5.75 + 1e-6, 0.5)  # 0.75..5.75 (step=0.5) → 11 edges
 BIN_N = len(BIN_EDGES) - 1                      # 10 bins
@@ -175,7 +175,7 @@ def build_confusion_matrix_for_user(g: pd.DataFrame) -> np.ndarray:
     Build 10x10 confusion-matrix-like count matrix with bin width 0.5:
 
       rows = GT bins (user_score in [0.75,1.25), [1.25,1.75), ..., [5.25,5.75))
-      cols = Pred bins (piaa_pred in 同上)
+      cols = Pred bins (piaa_pred on the same scale)
     """
     y_true = g["user_score"].to_numpy(dtype=float)
     y_pred = g["piaa_pred"].to_numpy(dtype=float)
@@ -225,18 +225,18 @@ def plot_user_confmat(
     plt.close("all")
     fig, ax = plt.subplots(figsize=figsize)
 
-    # extent を [min_edge, max_edge] にして、セル幅 ≈ 0.5 にする
+    # Set extent to [min_edge, max_edge] so each cell width is about 0.5
     extent = [BIN_EDGES[0], BIN_EDGES[-1], BIN_EDGES[0], BIN_EDGES[-1]]
     im = ax.imshow(
         mat,
         interpolation="nearest",
         cmap="Blues",
-        origin="lower",   # 下側が bin index 0（最小スコア帯）
+        origin="lower",   # lower side corresponds to bin index 0 (lowest score range)
         extent=extent,
         aspect="auto",
     )
 
-    # 軸ラベルは bin center (1.0,1.5,...,5.5)
+    # Axis labels use bin centers (1.0, 1.5, ..., 5.5)
     ax.set_xticks(BIN_CENTERS)
     ax.set_xticklabels([f"{c:.1f}" for c in BIN_CENTERS], rotation=45, ha="right", fontsize=8)
     ax.set_yticks(BIN_CENTERS)
@@ -253,7 +253,7 @@ def plot_user_confmat(
     cbar = fig.colorbar(im, ax=ax)
     cbar.set_label("Count")
 
-    # セル内にカウント描画：座標は中心 (pred_center, gt_center)
+    # Draw counts at cell centers: coordinates are (pred_center, gt_center)
     thresh = mat.max() / 2.0 if mat.max() > 0 else 0
     for i in range(BIN_N):   # GT bins
         for j in range(BIN_N):  # Pred bins
@@ -323,7 +323,7 @@ def main():
     df_all = load_baseline_from_dir(args.input_dir)
     print(f"[info] total rows = {len(df_all)}")
 
-    # (model_id, support_set, method) ごとの representative users を可視化
+    # Visualize representative users for each (model_id, support_set, method)
     grouped = df_all.groupby(["model_id", "support_set", "method"])
 
     for (model_id, support_set, method), g_method in tqdm(grouped, desc="Method combos"):
@@ -350,11 +350,11 @@ def main():
         for k in ["top", "mid", "bottom"]:
             print(f"    {k}: {reps[k]}")
 
-        # 手法ごとのサブディレクトリ
+        # Subdirectories for each method
         method_dir = os.path.join(args.out_dir, sanitize(str(method)))
         os.makedirs(method_dir, exist_ok=True)
 
-        # 各代表ユーザについて confusion-matrix 風 heatmap を描く
+        # Draw a confusion-matrix-style heatmap for each representative user
         for group_name, user_ids in reps.items():
             for user_id in user_ids:
                 g_user = g_method[g_method["user_id"] == user_id].copy()

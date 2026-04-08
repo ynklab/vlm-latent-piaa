@@ -232,7 +232,7 @@ def main():
         df = build_lapis_df(args.dataset_dir)
         title = "LAPIS: General score vs variance of personalized scores"
 
-    # もし「評価者数が少ない画像は避けたい」ならここでフィルタも可能:
+    # Optionally filter here if you want to exclude images with few raters:
     # df = df[df["n_raters"] >= 5]
 
     _scatter_plot(
@@ -244,7 +244,7 @@ def main():
         max_points=args.max_points,
     )
 
-    # 参考までに分散やスコアの簡単な統計も表示
+    # Also print simple variance and score statistics for reference
     print("[stats] general_score:", df["general_score"].describe())
     print("[stats] personal_var :", df["personal_var"].describe())
     print("[stats] n_raters     :", df["n_raters"].describe())

@@ -95,7 +95,7 @@ def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     if y_true.size < 2:
         return {"rho": float("nan"), "r2": float("nan")}
 
-    rho = spearmanr(y_true, y_pred).correlation  # ← NaN をそのまま
+    rho = spearmanr(y_true, y_pred).correlation  # keep NaN as-is
     try:
         r2 = float(r2_score(y_true, y_pred))
     except Exception:

@@ -2,34 +2,26 @@
 # -*- coding: utf-8 -*-
 
 """
-Evaluate PIAA baselines from CSV outputs of piaa_from_giaa_para.py.
+Evaluate PIAA baselines from CSV outputs of `piaa_from_giaa.py`.
 
-入力CSV形式 (piaa_from_giaa_para.py の出力):
-  columns:
-    user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
+Expected input CSV columns:
+  user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
 
-このスクリプトが行うこと:
+This script:
 
-1. --input_dir で指定されたディレクトリ内の CSV をすべて読み込み
-   （列構造が上記と一致するファイルだけ採用）。
-2. (model_id, support_set, method, user_id) ごとに
-   - Spearman ρ
-   - R² (sklearn.metrics.r2_score)
-   を計算（per-user metrics）。
-3. (model_id, support_set, method) ごとに per-user metrics を集約し，
-   mean_rho, std_rho, mean_r2, std_r2, num_users を算出（summary）。
-4. 保存:
-   - per-user metrics        -> <out_dir>/per_user_metrics.csv
-   - summary metrics         -> <out_dir>/summary_metrics.csv
-   - r2 がしきい値より低いユーザ -> <out_dir>/bad_users_r2.csv
-5. 可視化:
-   - 各 model_id について，bar chart:
-       - mean_rho vs (support_set, method)
-       - mean_r2  vs (support_set, method)
-     （バー1本 = (support_set, method)。生 raw は support_set 無視で "raw" 表示）
-   - 各 model_id について，箱ひげ図 (showfliers=False):
-       - per-user rho distribution
-       - per-user r2 distribution
+1. Loads all CSVs in `--input_dir` that match the schema above.
+2. Computes per-user metrics for each `(model_id, support_set, method, user_id)`:
+   - Spearman's rho
+   - R^2 (`sklearn.metrics.r2_score`)
+3. Aggregates per-user metrics by `(model_id, support_set, method)` and
+   computes `mean_rho`, `std_rho`, `mean_r2`, `std_r2`, and `num_users`.
+4. Saves:
+   - per-user metrics -> `<out_dir>/per_user_metrics.csv`
+   - summary metrics  -> `<out_dir>/summary_metrics.csv`
+   - users with low R^2 -> `<out_dir>/bad_users_r2.csv`
+5. Produces visualizations:
+   - bar charts of mean_rho and mean_r2 by `(support_set, method)`
+   - box plots of per-user rho / r2 (`showfliers=False`)
 """
 
 import os
@@ -53,8 +45,8 @@ def sanitize(s: str) -> str:
 
 def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     """
-    Spearman ρ と R² を計算。NaN を含むペアはドロップ。
-    R² は scikit-learn の r2_score を使用。
+    Compute Spearman's rho and R^2.
+    Pairs containing NaN values are dropped.
     """
     mask = ~np.isnan(y_true) & ~np.isnan(y_pred)
     y_true = y_true[mask]
@@ -78,8 +70,8 @@ def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
 
 def load_from_dir(input_dir: str) -> pd.DataFrame:
     """
-    指定ディレクトリ内の CSV をすべて読み込み，
-    必要なカラムを持つものだけを結合して返す。
+    Read all CSVs in the given directory and return the concatenation
+    of only those files that contain the required columns.
     """
     required = {
         "user_id",
@@ -107,7 +99,7 @@ def load_from_dir(input_dir: str) -> pd.DataFrame:
             continue
 
         if not required.issubset(df.columns):
-            # per_user_metrics.csv や summary_metrics.csv はここで弾かれる
+            # Files such as per_user_metrics.csv or summary_metrics.csv are filtered out here.
             print(f"[info] skip {path} (missing required columns)")
             continue
 
@@ -123,8 +115,8 @@ def load_from_dir(input_dir: str) -> pd.DataFrame:
 
 def compute_per_user_metrics(df_all: pd.DataFrame, min_items: int = 2) -> pd.DataFrame:
     """
-    (model_id, support_set, method, user_id) ごとに per-user metrics を計算。
-    min_items 未満のユーザはスキップ。
+    Compute per-user metrics for each `(model_id, support_set, method, user_id)`.
+    Skip users with fewer than `min_items` examples.
     """
     groups = df_all.groupby(["model_id", "support_set", "method", "user_id"])
 
@@ -155,7 +147,7 @@ def compute_per_user_metrics(df_all: pd.DataFrame, min_items: int = 2) -> pd.Dat
 
 def compute_summary(df_user: pd.DataFrame) -> pd.DataFrame:
     """
-    per-user metrics を (model_id, support_set, method) ごとに集約。
+    Aggregate per-user metrics by `(model_id, support_set, method)`.
     """
     if df_user.empty:
         return pd.DataFrame()
@@ -195,12 +187,12 @@ def plot_bar_for_model(
     dpi: int = 160,
 ):
     """
-    各 model_id について，metric vs (support_set, method) の bar chart を描く。
-    1本のバー = ある (support_set, method) の (mean_metric ± std_metric)。
+    Draw a bar chart of metric vs `(support_set, method)` for each model_id.
+    One bar corresponds to the `(mean_metric +/- std_metric)` of one pair.
 
-    - raw のときは support_set を無視して "raw" ラベル。
-    - small/large のときは "<method>_<small/large>" ラベル。
-    - 並び順: support_canon = raw -> small -> large -> その他 の順。
+    - For raw, ignore support_set and use the label "raw".
+    - For small/large, use the label "<method>_<small/large>".
+    - Ordering: raw -> small -> large -> others.
     """
     if df_summary.empty:
         print("[viz] summary dataframe is empty, nothing to plot.")
@@ -276,16 +268,17 @@ def plot_box_for_model(
     dpi: int = 160,
 ):
     """
-    per-user metrics (df_user) を使って，各 model_id ごとに
-    (support_set, method) 単位の分布を箱ひげ図で可視化する。
+    Use per-user metrics (`df_user`) to visualize the distribution of each
+    `(support_set, method)` pair as a box plot for every model_id.
 
-    並び順:
-      support_canon = raw -> small -> large の順で、その中で method 名順。
-      ラベルは bar のときと合わせて:
-        - raw のときは method のみ
-        - それ以外は "<method>_<support_canon>"
+    Ordering:
+      raw -> small -> large, and within each group sort by method name.
+      Labels follow the same convention as the bar chart:
+        - raw: method only
+        - otherwise: "<method>_<support_canon>"
 
-    showfliers=False なので、極端な外れ値は描画しない（分布の本体が見やすい）。
+    Since `showfliers=False`, extreme outliers are hidden to make the main
+    distribution easier to read.
     """
     if df_user.empty:
         print("[viz-box] per-user dataframe is empty, nothing to plot.")
@@ -335,7 +328,7 @@ def plot_box_for_model(
             labels=labels,
             patch_artist=True,
             notch=False,
-            showfliers=False,  # ★ 外れ値は描かない
+            showfliers=False,  # Hide outliers.
         )
 
         cmap = plt.get_cmap("tab20")
@@ -398,7 +391,7 @@ def main():
     df_user.to_csv(per_user_path, index=False)
     print(f"[save] per-user metrics -> {per_user_path} (rows={len(df_user)})")
 
-    # 2.5) Bad users (R^2 < threshold) を保存
+    # 2.5) Save bad users (R^2 < threshold).
     bad_mask = df_user["r2"] < args.bad_r2_threshold
     df_bad = df_user[bad_mask].copy()
     bad_path = os.path.join(args.out_dir, "bad_users_r2.csv")

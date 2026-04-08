@@ -123,15 +123,15 @@ def load_result_files(inputs: List[str]) -> List[str]:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--inputs", nargs="+", required=True, help="結果JSON（ファイル or ディレクトリ）")
-    ap.add_argument("--out_dir", default="viz", help="出力ルートフォルダ")
+    ap.add_argument("--inputs", nargs="+", required=True, help="Result JSON input (file or directory)")
+    ap.add_argument("--out_dir", default="viz", help="Output root directory")
     ap.add_argument("--dpi", type=int, default=160)
     ap.add_argument("--fig_w", type=float, default=10.0)
     ap.add_argument("--fig_h", type=float, default=8.5)
     ap.add_argument("--marker_size", type=float, default=3.0)
     ap.add_argument("--line_width", type=float, default=1.0)
     ap.add_argument("--palette", type=str, default="auto",
-                    help="色パレット: auto / tab20 / tab20b / tab20c / hsv / turbo など")
+                    help="Color palette: auto / tab20 / tab20b / tab20c / hsv / turbo / etc.")
     args = ap.parse_args()
 
     files = load_result_files(args.inputs)
@@ -149,18 +149,18 @@ def main():
 
         cfg = results.get("config", {})
         prompt_mode = cfg.get("prompt_mode", "unknown_prompt")
-        dataset     = cfg.get("dataset", "unknown_dataset")   # ★ 追加
+        dataset     = cfg.get("dataset", "unknown_dataset")
         model_id    = cfg.get("model_id") or os.path.splitext(os.path.basename(fp))[0]
 
         prompt_dir  = sanitize(prompt_mode)
-        dataset_dir = sanitize(dataset)                       # ★ 追加
+        dataset_dir = sanitize(dataset)
         model_dir   = os.path.join(args.out_dir, dataset_dir, prompt_dir, sanitize(model_id))
         sources = collect_sources(results)
         if not sources:
             print(f"[viz] No sources found in: {fp}")
             continue
 
-        # 属性名→色の割当（モデル単位で固定）
+        # Map attribute names to colors (fixed within each model)
         attr_names = sorted(list(results.get("attrs", {}).keys()))
         colors = pick_distinct_colors(len(attr_names), palette=args.palette)
         attr2color = {a: c for a, c in zip(attr_names, colors)}

@@ -2,20 +2,20 @@
 # -*- coding: utf-8 -*-
 
 """
-AADB / PARA データセット中の各 attribute のヒストグラムを描画するスクリプト。
+Plot histograms of each attribute in the AADB / PARA datasets.
 
-前提:
-  - utils/aadb.py に get_aadb_dataset, AESTHETIC_ATTRIBUTES, AADBItem が定義されている
-  - utils/para.py に get_para_dataset, AESTHETIC_ATTRIBUTES, PARAItem が定義されている
+Assumptions:
+  - utils/aadb.py defines get_aadb_dataset, AESTHETIC_ATTRIBUTES, and AADBItem
+  - utils/para.py defines get_para_dataset, AESTHETIC_ATTRIBUTES, and PARAItem
 
-実行例:
-  # AADB だけ
+Examples:
+  # AADB only
   python -m scripts.visualization.plot_attr_histograms --dataset aadb --out_dir viz_hists
 
-  # PARA だけ
+  # PARA only
   python -m scripts.visualization.plot_attr_histograms --dataset para --out_dir viz_hists
 
-  # 両方
+  # both
   python -m scripts.visualization.plot_attr_histograms --dataset both --out_dir viz_hists
 """
 
@@ -30,7 +30,7 @@ from utils.aadb import get_aadb_dataset, AESTHETIC_ATTRIBUTES as AADB_ATTRS
 from utils.para import get_para_dataset, AESTHETIC_ATTRIBUTES as PARA_ATTRS
 
 
-# ------------- 共通ユーティリティ -------------
+# ------------- Shared utilities -------------
 
 def _ensure_dir(path: str):
     if path and not os.path.exists(path):
@@ -39,21 +39,21 @@ def _ensure_dir(path: str):
 
 def _collect_aadb_values(dataset_dir: str) -> Tuple[List[str], Dict[str, np.ndarray]]:
     """
-    AADB: 属性名リストと、属性→値配列 の辞書を返す。
-    - overall score は "score" として扱う。
-    - attributes dict に含まれる属性は AADB_ATTRS を使う。
+    AADB: return the attribute-name list and a dict mapping attributes to value arrays.
+    - Treat the overall score as "score".
+    - Use AADB_ATTRS for the attributes stored in the attributes dict.
     """
     items = get_aadb_dataset("train", dataset_dir=dataset_dir) + \
             get_aadb_dataset("validation", dataset_dir=dataset_dir) + \
             get_aadb_dataset("test", dataset_dir=dataset_dir)
 
-    # overall score + 属性（AADB_ATTRS）
+    # overall score + attributes (AADB_ATTRS)
     attr_names: List[str] =  list(AADB_ATTRS)
 
     values: Dict[str, List[float]] = {a: [] for a in attr_names}
 
     for it in items:
-        # 各 attribute
+        # each attribute
         for a in AADB_ATTRS:
             if a in it.attributes:
                 values[a].append(float(it.attributes[a]))
@@ -64,23 +64,23 @@ def _collect_aadb_values(dataset_dir: str) -> Tuple[List[str], Dict[str, np.ndar
 
 def _collect_para_values(dataset_dir: str) -> Tuple[List[str], Dict[str, np.ndarray]]:
     """
-    PARA: 属性名リストと、属性→値配列 の辞書を返す。
-    - PARA_ATTRS は "score" を含むので、重複しないように注意する。
-    - overall score は "score" として it.score を使う。
+    PARA: return the attribute-name list and a dict mapping attributes to value arrays.
+    - PARA_ATTRS already includes "score", so avoid duplicates.
+    - Use `it.score` as the overall score under the name "score".
     """
     items = get_para_dataset("train", dataset_dir=dataset_dir) + \
             get_para_dataset("test", dataset_dir=dataset_dir)
 
-    # attr_names は PARA_ATTRS をそのまま使う (score, quality, composition, ...)
+    # Use PARA_ATTRS directly for attr_names (score, quality, composition, ...)
     attr_names: List[str] = list(PARA_ATTRS)
 
     values: Dict[str, List[float]] = {a: [] for a in attr_names}
 
     for it in items:
-        # score は it.score を優先
+        # Prefer `it.score` for score
         if "score" in values:
             values["score"].append(float(it.score))
-        # その他の attribute は attributes dict から
+        # Read the remaining attributes from the attributes dict
         for a in attr_names:
             if a == "score":
                 continue
@@ -100,7 +100,7 @@ def _plot_histograms(
 ):
     """
     dataset_name: "aadb" / "para"
-    attr_names  : プロット対象の順序つき属性名リスト
+    attr_names  : ordered list of attributes to plot
     values      : attr -> np.ndarray
     """
     _ensure_dir(out_dir)
@@ -126,12 +126,12 @@ def _plot_histograms(
             ax.set_yticks([])
             continue
 
-        # ヒストグラム
+        # histogram
         ax.hist(vals, bins=bins)
         ax.set_title("Overall Score" if attr == 'score' else attr, fontsize=18)
         ax.grid(True, linestyle="--", alpha=0.3)
 
-    # 余ったサブプロットを消す
+    # Remove unused subplots
     for idx in range(n_attr, n_rows * n_cols):
         r = idx // n_cols
         c = idx % n_cols

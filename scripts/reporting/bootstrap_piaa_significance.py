@@ -60,8 +60,8 @@ def sanitize(s: str) -> str:
 
 def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     """
-    Spearman ρ と R² を計算。NaN を含むペアはドロップ。
-    R² は scikit-learn の r2_score を使用。
+    Compute Spearman's rho and R^2.
+    Pairs containing NaN values are dropped.
     """
     mask = ~np.isnan(y_true) & ~np.isnan(y_pred)
     y_true = y_true[mask]
@@ -83,8 +83,8 @@ def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
 
 def load_from_dir(input_dir: str) -> pd.DataFrame:
     """
-    指定ディレクトリ内の CSV をすべて読み込み，
-    必要なカラムを持つものだけを結合して返す。
+    Read all CSVs in the input directory and return the concatenation
+    of only those files that contain the required columns.
     """
     required = {
         "user_id",
@@ -112,7 +112,7 @@ def load_from_dir(input_dir: str) -> pd.DataFrame:
             continue
 
         if not required.issubset(df.columns):
-            # per_user_metrics.csv, summary_metrics.csv などはここで弾かれる
+            # Files such as per_user_metrics.csv or summary_metrics.csv are filtered out here.
             print(f"[info] skip {path} (missing required baseline columns)")
             continue
 
@@ -128,8 +128,8 @@ def load_from_dir(input_dir: str) -> pd.DataFrame:
 
 def compute_per_user_metrics(df_all: pd.DataFrame, min_items: int = 2) -> pd.DataFrame:
     """
-    (model_id, support_set, method, user_id) ごとに per-user metrics を計算。
-    min_items 未満のユーザはスキップ。
+    Compute per-user metrics for each `(model_id, support_set, method, user_id)`.
+    Skip users with fewer than `min_items` examples.
     """
     groups = df_all.groupby(["model_id", "support_set", "method", "user_id"])
     rows = []
@@ -171,23 +171,24 @@ def bootstrap_pairwise(
     df_user: per-user metrics (model_id, support_set, method, user_id, rho, r2, ...)
     metric : "rho" or "r2"
 
-    比較単位は (support_set, method) の組。すなわち:
+    The comparison unit is the `(support_set, method)` pair:
 
       comboA = (support_set_A, method_A)
       comboB = (support_set_B, method_B)
 
-    としたとき、各 model_id ごとに comboA vs comboB の性能差をブートストラップで評価する。
+    For each model_id, evaluate the performance difference between
+    comboA and comboB via bootstrap resampling.
     """
     rng = np.random.RandomState(seed)
     results = []
 
-    # 各 model_id ごとに処理
+    # Process each model_id independently.
     for model_id in df_user["model_id"].unique():
         df_m = df_user[df_user["model_id"] == model_id].copy()
         if df_m.empty:
             continue
 
-        # コンボキー: "support_set::method"
+        # Combo key: "support_set::method"
         df_m["combo"] = df_m["support_set"].astype(str) + "::" + df_m["method"].astype(str)
 
         combos = sorted(df_m["combo"].unique())
@@ -202,7 +203,7 @@ def bootstrap_pairwise(
             aggfunc="mean",
         )
 
-        # ペアワイズに比較
+        # Compare all pairs.
         for i in range(len(combos)):
             for j in range(i + 1, len(combos)):
                 cA = combos[i]
@@ -235,7 +236,7 @@ def bootstrap_pairwise(
                 ci_high = float(np.percentile(boot_means, 100 * (1 - alpha / 2.0)))
                 p_greater = float(np.mean(boot_means > 0.0))
 
-                # combo から (support_set, method) を復元
+                # Recover (support_set, method) from the combo key.
                 support_a, method_a = cA.split("::", 1)
                 support_b, method_b = cB.split("::", 1)
 

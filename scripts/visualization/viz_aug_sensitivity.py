@@ -4,7 +4,7 @@
 """
 Visualize augmentation sensitivity results produced by probe_image_aug_sensitivity.py.
 
-入力(JSON):
+Input (JSON):
   {
     "config": {
       "model_id": "...",
@@ -39,14 +39,14 @@ Visualize augmentation sensitivity results produced by probe_image_aug_sensitivi
     }
   }
 
-出力:
+Output:
   out_dir / <dataset> / <prompt_mode> / <model_id> /
     <source>__<split>__<metric>.png
 
-各画像は:
-  - x軸: attributes
-  - y軸: metric (rho/rmse/r2)
-  - 各 attribute 毎に orig/gray/tps の棒グラフを並べて比較
+Each figure:
+  - x-axis: attributes
+  - y-axis: metric (rho/rmse/r2)
+  - compare orig/gray/tps side by side for each attribute
 """
 
 import os
@@ -86,7 +86,7 @@ def collect_attr_names(source_entry: Dict) -> List[str]:
     source_entry: results["sources"][source]
     """
     modes = source_entry.get("modes", {})
-    # 優先: orig の attrs, なければ最初のモード
+    # Prefer attrs from orig; otherwise use the first mode
     mode_keys = list(modes.keys())
     if not mode_keys:
         return []
@@ -105,7 +105,7 @@ def collect_best_metric_per_attr(
     metric: str,
 ) -> Dict[str, Dict[str, float]]:
     """
-    戻り値:
+    Returns:
       attr -> {mode -> best[split][metric]}
     """
     out: Dict[str, Dict[str, float]] = {}
@@ -143,13 +143,13 @@ def plot_bar_for_source(
 ):
     """
     attr_to_mode_values: attr -> {mode -> value}
-    modes: ["orig","gray","tps"] など
+    modes: e.g. ["orig", "gray", "tps"]
     """
     attrs = list(attr_to_mode_values.keys())
     if not attrs:
         return False
 
-    # データ行列を構成: rows=attrs, cols=modes
+    # Build the data matrix: rows=attrs, cols=modes
     data = np.array([
         [attr_to_mode_values[a].get(m, np.nan) for m in modes]
         for a in attrs
@@ -158,7 +158,7 @@ def plot_bar_for_source(
     n_attr = len(attrs)
     n_modes = len(modes)
     x = np.arange(n_attr)
-    width = 0.7 / max(1, n_modes)  # attributeごとのバー幅調整
+    width = 0.7 / max(1, n_modes)  # Adjust bar width per attribute
 
     plt.close("all")
     fig, ax = plt.subplots(figsize=figsize)
@@ -244,14 +244,14 @@ def main():
                 print(f"[viz] no source={source} in {fp}, skip")
                 continue
 
-            # 使用可能な modes をフィルタ（orig/gray/tps のうち存在するもの）
+            # Filter to available modes (subset of orig/gray/tps)
             available_modes = list(source_entry.get("modes", {}).keys())
             modes = [m for m in args.modes if m in available_modes]
             if not modes:
                 print(f"[viz] no modes {args.modes} available for source={source} in {fp}, skip")
                 continue
 
-            # 属性ごとに mode→metric を集計
+            # Aggregate mode -> metric for each attribute
             attr_to_mode_values = collect_best_metric_per_attr(
                 source_entry, modes=modes, split=args.split, metric=args.metric
             )

@@ -4,24 +4,24 @@
 """
 Token-level LoRA baseline for PIAA on PARA / LAPIS using multimodal VLMs (Gemma3 / Qwen3-VL).
 
-- 教師信号は「ユーザーのスコア (1〜5)」を整数クラスとして扱い、
-  回答トークン（数字1トークン）だけに CrossEntropy ロスをかける。
-- プロンプトやシステムメッセージ部分には loss をかけない。
-- LoRA はテキストデコーダの Attention/MLP にのみ適用する。
+- Treat the supervision signal as the user score (1-5) cast to an integer class,
+  and apply CrossEntropy loss only to the answer token (the single numeric token).
+- Do not apply loss to the prompt or system-message tokens.
+- Apply LoRA only to the text decoder Attention/MLP modules.
 
-学習データ:
-  - get_personalized_*_dataset から取得する support_small or support_large の全ユーザ分を union。
-  - 各サンプル: (image_path, user_score) を整数 [1..5] に丸めたクラスラベル。
+Training data:
+  - Union of all users' support_small or support_large examples from get_personalized_*_dataset.
+  - Each sample uses (image_path, user_score), where the score is rounded to an integer class in [1..5].
 
-評価:
-  - 各ユーザ u の test セットについて、LoRAモデルでスコアを生成し、
-    per-user ρ / R² を eval_piaa_baselines.py などで測る。
+Evaluation:
+  - For each user u, generate scores on the user's test set with the LoRA model,
+    then measure per-user rho / R^2 with eval_piaa_baselines.py or similar tools.
 
-出力 CSV:
+Output CSV:
   user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
 
-  - method: "lora_tokencls_<support_set>" (例: lora_tokencls_small)
-  - giaa : NaN（GIAA は使わない）
+  - method: "lora_tokencls_<support_set>" (Examples: lora_tokencls_small)
+  - giaa : NaN (GIAA is unused here)
 """
 
 import os
@@ -72,12 +72,12 @@ def set_seed(seed: int = 42):
 
 def parse_int_score_from_text(text: str) -> float:
     """
-    テキストから最初の整数っぽい数字を探して 1〜5 にクリップして返す。
-    見つからなければ NaN。
+    Find the first integer-like number in the text, clip it to 1-5, and return it.
+    Return NaN if nothing is found.
     """
     m = re.search(r"\b[1-5]\b", text)
     if not m:
-        # fallback: 任意の整数を拾って1〜5にクリップ
+        # fallback: find any integer and clip it to 1-5
         m2 = re.search(r"[-+]?\d+", text)
         if not m2:
             return math.nan
@@ -95,8 +95,8 @@ def parse_int_score_from_text(text: str) -> float:
 
 def score_to_class(score: float) -> int:
     """
-    ユーザスコア (1〜5 の実数) をクラスラベル [0..4] に変換。
-    round→clip で単純に丸める。
+    Convert a user score (real-valued 1-5) into a class label in [0..4].
+    Use a simple round-and-clip rule.
     """
     v = round(score)
     v = max(1, min(5, v))
@@ -107,14 +107,14 @@ def score_to_class(score: float) -> int:
 
 class TokenClsDataset(Dataset):
     """
-    各サンプル:
+    Each sample:
       - image_path: str
-      - score_int:  int in {1,2,3,4,5}  (クラスラベルは0〜4)
+      - score_int: int in {1,2,3,4,5} (class labels are 0-4)
 
-    __getitem__ で:
-      - chat形式の会話 (user + assistant) を apply_chat_template で token 化。
-      - assistant の数値 ("1"〜"5") に対応するトークン位置のみラベルとして残し、
-        それ以外は -100 にマスクする。
+    In __getitem__:
+      - tokenize a chat-form conversation (user + assistant) with apply_chat_template.
+      - keep only the token positions corresponding to the assistant's numeric answer ("1"-"5") as labels,
+        and mask all other positions with -100.
     """
 
     def __init__(self, items, processor, device, tokenizer):
@@ -157,7 +157,7 @@ class TokenClsDataset(Dataset):
 
         messages = self._build_messages(img, score_int)
 
-        # 会話全体 (user + assistant) を token 化
+        # Tokenize the full conversation (user + assistant)
         inputs = self.processor.apply_chat_template(
             messages,
             tokenize=True,
@@ -168,14 +168,14 @@ class TokenClsDataset(Dataset):
         input_ids = inputs["input_ids"][0]         # [L]
         attention_mask = inputs["attention_mask"][0]
 
-        # assistantの数値 (1〜5) のトークン列を取得
+        # Get the token sequence for the assistant's numeric answer (1-5)
         ans_text = str(score_int)
         ans_ids = self.tokenizer(ans_text, add_special_tokens=False).input_ids
         if not ans_ids:
             raise RuntimeError(f"Tokenization for answer '{ans_text}' returned empty ids.")
 
-        # input_ids の中で ans_ids にマッチする suffix を探す
-        # 通常は末尾近くにあるはずなので後ろから走査する
+        # Search for a suffix in input_ids that matches ans_ids
+        # Usually it is near the end, so scan backward
         L = input_ids.size(0)
         ans_len = len(ans_ids)
         start_idx = None
@@ -185,13 +185,13 @@ class TokenClsDataset(Dataset):
                 break
 
         if start_idx is None:
-            # Fallback: 最後のトークン1つだけを回答とみなす
+            # Fallback: treat only the last token as the answer
             start_idx = L - 1
             ans_len = 1
             ans_ids = [int(input_ids[start_idx].item())]
 
         labels = torch.full_like(input_ids, fill_value=-100)
-        # ans_ids をラベルとして設定
+        # Set ans_ids as the labels
         for i in range(ans_len):
             labels[start_idx + i] = input_ids[start_idx + i]
 
@@ -204,8 +204,8 @@ class TokenClsDataset(Dataset):
 
 def collate_fn(batch):
     """
-    左詰めpaddingのためのcollate。
-    labels は input_ids と同じ形だが、回答トークン以外は -100。
+    Collate function for left-aligned padding.
+    `labels` has the same shape as `input_ids`, but non-answer tokens are masked with -100.
     """
     input_ids = [b["input_ids"] for b in batch]
     attention_mask = [b["attention_mask"] for b in batch]
@@ -331,14 +331,14 @@ def main():
 
     set_seed(args.seed)
 
-    # dataset_dir デフォルト
+    # Default dataset_dir
     if args.dataset_dir is None:
         if args.dataset == "para":
             args.dataset_dir = "datasets/PARA"
         else:
             args.dataset_dir = "datasets/LAPIS"
 
-    # 1) Personalized データ読み込み
+    # 1) Load personalized data
     print(f"[info] loading personalized {args.dataset.upper()} dataset...")
     if args.dataset == "para":
         personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
@@ -354,7 +354,7 @@ def main():
     else:
         user_ids = all_user_ids
 
-    # 2) 学習データ (support) と評価データ (test) を構築
+    # 2) Build training (support) and evaluation (test) data
     train_examples = []
     eval_items = []
 
@@ -392,7 +392,7 @@ def main():
         train_examples = train_examples[: args.max_train_samples]
         print(f"[info] max_train_samples: using first {len(train_examples)} training examples")
 
-    # 3) モデル指定（Gemma or Qwenのどちらか1つ）
+    # 3) Select one model (Gemma or Qwen)
     model_specs = []
     if args.gemma_model_id:
         model_specs.append(("gemma", args.gemma_model_id))
@@ -424,7 +424,7 @@ def main():
     processor = AutoProcessor.from_pretrained(mid, trust_remote_code=True)
     tokenizer = processor.tokenizer
 
-    # LoRA設定（テキスト側 Attention/MLP）
+    # LoRA configuration (text-side Attention/MLP)
     lora_targets = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
     lora_config = LoraConfig(
         r=args.lora_r,
@@ -480,7 +480,7 @@ def main():
 
         print(f"[train] epoch {epoch+1}: loss = {np.mean(epoch_losses):.4f}")
 
-    # 5) 評価: 各ユーザの test セットで生成
+    # 5) Evaluation: generate outputs on each user's test set
     model.eval()
     rows = []
     method_name = f"lora_tokencls_{args.support_set}"
@@ -541,7 +541,7 @@ def main():
             }
         )
 
-    # 6) CSV 保存
+    # 6) Save CSV
     out_path = args.out_csv
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fieldnames = [

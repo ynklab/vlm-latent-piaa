@@ -58,7 +58,7 @@ from utils.para import get_para_dataset
 from utils.lapis import get_lapis_dataset
 
 
-# ---------- FORMAT Prompt（統一） ----------
+# ---------- Standardized FORMAT prompt ----------
 
 FORMAT_PROMPT = (
     "Assess the overall aesthetic quality of this image. "
@@ -94,9 +94,10 @@ def load_img(path: str, resize: bool, max_side: int) -> Image.Image:
 
 def build_inputs(processor, image: Image.Image, prompt: str, device: torch.device):
     """
-    画像＋テキストを Processor の chat_template でまとめてモデル入力を作る。
+    Build model inputs by combining image and text with the processor's
+    chat template.
 
-    想定:
+    Assumptions:
       - Gemma3 (google/gemma-3-*-it)
       - Qwen3-VL (Qwen/Qwen3-VL-*-Instruct)
     """
@@ -118,21 +119,21 @@ def build_inputs(processor, image: Image.Image, prompt: str, device: torch.devic
     inputs = processor.apply_chat_template(
         messages,
         tokenize=True,
-        add_generation_prompt=True,  # assistant ターンを入れる
+        add_generation_prompt=True,  # include the assistant turn
         return_tensors="pt",
         return_dict=True,
     )
 
     model_inputs = {k: v.to(device) for k, v in inputs.items()}
-    model_inputs.pop("token_type_ids", None)  # Qwen系で付いてくる場合は削除
+    model_inputs.pop("token_type_ids", None)  # remove if added by Qwen-style processors
     return model_inputs
 
 
 def parse_float_from_text(text: str) -> float:
     """
-    出力テキストから最初の float っぽい数字をパースする。
-    "3.5", "4", "I rate it 2.0." などに対応。
-    パース失敗時は NaN を返す。
+    Parse the first float-like number from the generated text.
+    Supports outputs such as "3.5", "4", or "I rate it 2.0.".
+    Return NaN if parsing fails.
     """
     m = re.search(r"[-+]?\d+(\.\d+)?", text)
     if not m:
@@ -255,14 +256,14 @@ def main():
 
     set_seed(args.seed)
 
-    # デフォルトの dataset_dir を決める
+    # Resolve the default dataset_dir.
     if args.dataset_dir is None:
         if args.dataset == "para":
             args.dataset_dir = "datasets/PARA"
         else:
             args.dataset_dir = "datasets/LAPIS"
 
-    # データ読み込み (all splits)
+    # Load data (all splits).
     if args.dataset == "para":
         items = get_para_dataset(None, dataset_dir=args.dataset_dir)
     else:
@@ -270,7 +271,7 @@ def main():
 
     print(f"[info] dataset={args.dataset}, dir={args.dataset_dir}, total_items={len(items)}")
 
-    # どのモデルを走らせるか
+    # Select which model(s) to run.
     model_ids: List[tuple[str, str]] = []
     if args.gemma_model_id:
         model_ids.append(("gemma", args.gemma_model_id))
@@ -287,7 +288,7 @@ def main():
         device_str = "cuda" if torch.cuda.is_available() else "cpu"
 
         if family == "qwen":
-            # Qwen3-VL は専用クラスでロード
+            # Load Qwen3-VL with its dedicated class.
             model = Qwen3VLForConditionalGeneration.from_pretrained(
                 mid,
                 torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
@@ -329,7 +330,7 @@ def main():
                 }
             )
 
-    # CSV 保存
+    # Save CSV.
     out_path = args.out_csv
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fieldnames = ["model_id", "dataset", "split", "image_path", "giaa", "raw_output"]

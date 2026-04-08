@@ -6,7 +6,7 @@ Visualize y_true vs y_pred scatter plots for each PIAA method.
 
 Input:
   - A directory containing PIAA baseline CSVs (from piaa_from_giaa.py,
-    residual/direct/hidden_attr/LoRA/CoT など) with columns:
+    residual/direct/hidden_attr/LoRA/CoT, etc.) with columns:
 
       user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score, ...
 
@@ -47,8 +47,8 @@ def sanitize(s: str) -> str:
 
 def load_baseline_from_dir(input_dir: str) -> pd.DataFrame:
     """
-    指定ディレクトリ内のCSVを読み込み、
-    PIAAベースライン用のカラムを持つものだけを結合して返す。
+    Read CSVs in the given directory,
+    and return the concatenation of only files with the required PIAA baseline columns.
     """
     required = {
         "user_id",
@@ -106,7 +106,7 @@ def plot_scatter_for_method(
     if df.empty:
         return False
 
-    # 抜き出し & NaN除去
+    # Extract values and drop NaNs
     x = df["user_score"].to_numpy(dtype=float)
     y = df["piaa_pred"].to_numpy(dtype=float)
     mask = ~np.isnan(x) & ~np.isnan(y)
@@ -116,13 +116,13 @@ def plot_scatter_for_method(
     if x.size == 0:
         return False
 
-    # サブサンプル（オプション）
+    # Optional subsampling
     if max_points is not None and x.size > max_points:
         idx = np.random.RandomState(0).choice(x.size, size=max_points, replace=False)
         x = x[idx]
         y = y[idx]
 
-    # Spearman ρ を計算（タイトル用）
+    # Compute Spearman's rho for the title
     rho = spearmanr(x, y).correlation
     if np.isnan(rho):
         rho = 0.0
@@ -132,7 +132,7 @@ def plot_scatter_for_method(
 
     ax.scatter(x, y, s=8, alpha=0.4)
 
-    # y=x ライン
+    # y = x reference line
     vmin = min(x.min(), y.min())
     vmax = max(x.max(), y.max())
     if not np.isfinite(vmin) or not np.isfinite(vmax):
@@ -204,7 +204,7 @@ def main():
     df_all = load_baseline_from_dir(args.input_dir)
     print(f"[info] total rows = {len(df_all)}")
 
-    # フィルタリング
+    # Filtering
     df = df_all.copy()
     if args.model_id_filter is not None:
         df = df[df["model_id"] == args.model_id_filter].copy()
@@ -217,7 +217,7 @@ def main():
         print("[warn] no rows left after filtering, nothing to plot.")
         return
 
-    # (model_id, support_set, method) ごとの scatter を描く
+    # Draw a scatter plot for each (model_id, support_set, method)
     grouped = df.groupby(["model_id", "support_set", "method"])
 
     for (model_id, support_set, method), g in tqdm(grouped, desc="Methods"):

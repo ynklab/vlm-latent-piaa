@@ -8,8 +8,8 @@ CoT-style PIAA prediction on personalized PARA / LAPIS using a multimodal VLM (G
 - Target data: personalized datasets (PARA / LAPIS), i.e.
     - PARA  : utils.para.get_personalized_para_dataset
     - LAPIS : utils.lapis.get_personalized_lapis_dataset
-- Support setは無視し、personalizedデータに含まれる全画像
-  (support_small + support_large + test) をそのまま PIAA 評価対象とする。
+- Ignore the support set and use all images in the personalized data
+  (support_small + support_large + test) directly as the PIAA evaluation set.
 
 For each (user, image):
   - Prompt the model to:
@@ -20,15 +20,15 @@ For each (user, image):
       - predicted attributes
       - predicted overall score
 
-Output format (PIAA scriptsとほぼ同じ + raw_output):
+Output format (almost the same as the PIAA scripts, plus raw_output):
   user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score, raw_output
 
   - method: "cot_attr" (CoT-based attribute reasoning baseline)
-  - support_set: "none"（support setを使っていないため固定値）
-  - giaa : NaN（GIAAはここでは使わない）
+  - support_set: "none" (fixed because no support set is used)
+  - giaa : NaN (GIAA is not used here)
   - piaa_pred : parsed Overall score
   - user_score: personalized ground truth score
-  - raw_output: モデルの生の応答テキスト
+  - raw_output: raw model response text
 """
 
 import os
@@ -73,13 +73,13 @@ def build_prompt(attr_names: List[str]) -> str:
 
 def parse_attributes_from_output(text: str, attr_names: List[str]) -> Dict[str, float]:
     """
-    モデルの出力テキストから、各 AttributeName: X の値をパースする。
-    最後に Overall: Y を探す。見つからなければ、最後の数値を Overall とみなす。
+    Parse each `AttributeName: X` value from the model output text.
+    Then look for `Overall: Y`. If it is missing, treat the last number in the text as Overall.
     """
     result: Dict[str, float] = {}
-    # 各属性
+    # Each attribute
     for attr in attr_names:
-        # AttributeName: X または AttributeName = X の形を探す
+        # Look for either `AttributeName: X` or `AttributeName = X`
         m = re.search(
             rf"{re.escape(attr)}\s*[:=]\s*([-+]?\d+(\.\d+)?)",
             text,
@@ -101,7 +101,7 @@ def parse_attributes_from_output(text: str, attr_names: List[str]) -> Dict[str, 
         except Exception:
             overall = math.nan
     else:
-        # fallback: テキスト中の最後の数値を Overall として拾う
+        # fallback: treat the last number in the text as Overall
         all_nums = list(re.finditer(r"[-+]?\d+(\.\d+)?", text))
         if all_nums:
             try:
@@ -159,14 +159,14 @@ def main():
     )
     args = ap.parse_args()
 
-    # dataset_dir デフォルト
+    # Default dataset_dir
     if args.dataset_dir is None:
         if args.dataset == "para":
             args.dataset_dir = "datasets/PARA"
         else:
             args.dataset_dir = "datasets/LAPIS"
 
-    # 1) Personalized データ読み込み
+    # 1) Load personalized data
     if args.dataset == "para":
         print(f"[info] loading personalized PARA (seed={args.seed})...")
         personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
@@ -183,13 +183,13 @@ def main():
     else:
         user_ids = all_user_ids
 
-    # 2) AADB属性リスト（score を除く）
+    # 2) AADB attribute list (excluding score)
     attr_names = [a for a in AADB_ATTRS if a != "score"]
     print(f"[info] attributes used in CoT prompt (from AADB): {attr_names}")
 
     prompt_text = build_prompt(attr_names)
 
-    # 3) モデルロード（Gemma or Qwen のどちらか1つ）
+    # 3) Load one model (Gemma or Qwen)
     model_specs = []
     if args.gemma_model_id:
         model_specs.append(("gemma", args.gemma_model_id))
@@ -224,9 +224,9 @@ def main():
 
     rows: List[dict] = []
     method_name = "cot_attr"
-    support_set_value = "none"  # Support Setは使わない
+    support_set_value = "none"  # No support set is used
 
-    # 4) ユーザごとにtest画像を評価
+    # 4) Evaluate test images user by user
     for user_id in tqdm(user_ids, desc=f"CoT PIAA [{mid}] users"):
         pdata = personalized[user_id]
         items = pdata.test
@@ -284,14 +284,14 @@ def main():
                     "model_id": mid,
                     "support_set": support_set_value,
                     "method": method_name,
-                    "giaa": math.nan,               # GIAAは使わない
-                    "piaa_pred": pred_overall,      # OverallをPIAA予測として扱う
+                    "giaa": math.nan,               # GIAA is unused
+                    "piaa_pred": pred_overall,      # Treat Overall as the PIAA prediction
                     "user_score": float(it.score),  # Personalized ground truth
-                    "raw_output": text,            # 生の応答を保存
+                    "raw_output": text,            # Save the raw response
                 }
             )
 
-    # 5) CSV 保存（PIAAフォーマット＋raw_output）
+    # 5) Save CSV (PIAA format + raw_output)
     out_path = args.out_csv
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fieldnames = [

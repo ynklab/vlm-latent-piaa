@@ -33,14 +33,14 @@ Workflow (per user u):
        - Let model generate attributes + Overall.
        - Parse "Overall: Y" as PIAA prediction.
 
-Output CSV (PIAA形式 + raw_output):
+Output CSV (PIAA format + raw_output):
 
   user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score, raw_output
 
   - method:
       * target_score=piaa   : "cot_attr_lora_per_user_<support_set>"
       * target_score=giaa_gt: "cot_attr_lora_per_user_giaa_gt_<support_set>"
-  - giaa      : NaN（ここでは GIAA は使わない）
+  - giaa      : NaN (GIAA is unused here)
   - piaa_pred : parsed Overall score
   - user_score: always personalized ground truth (PIAA)
 """
@@ -118,8 +118,8 @@ def set_seed(seed: int = 42):
 
 def parse_overall_from_text(text: str) -> float:
     """
-    出力テキストから Overall: Y の Y をパースする。
-    なければ最後の数値を拾う。
+    Parse the value `Y` from `Overall: Y` in the output text.
+    If absent, fall back to the last number in the text.
     """
     m = re.search(r"Overall\s*[:=]\s*([-+]?\d+(\.\d+)?)", text, flags=re.IGNORECASE)
     if m:
@@ -160,10 +160,10 @@ def extract_feature_vector(pools, source: str, layer_idx: int) -> np.ndarray:
 
 class UserInstrDataset(Dataset):
     """
-    1ユーザの support set を Instruction Tuning 用の Dataset に変換する。
+    Convert one user's support set into a Dataset for instruction tuning.
 
     items: List[{"image_path": str, "attrs": np.ndarray[K], "target_score": float}]
-      - attrs: AADB-style attribute vector (1..5程度) from projection
+      - attrs: AADB-style attribute vector from the projection (roughly in the range 1..5)
       - target_score: Overall Y (either PIAA or GIAA_GT, depending on --target_score)
     """
 
@@ -222,7 +222,7 @@ class UserInstrDataset(Dataset):
         input_ids_full = out_full["input_ids"][0]
         attention_mask_full = out_full["attention_mask"][0]
 
-        # user only (assistant の開始位置を知るため)
+        # user only (to know where the assistant segment begins)
         messages_user_only = [
             {
                 "role": "user",
@@ -384,14 +384,14 @@ def main():
 
     set_seed(args.seed)
 
-    # dataset_dir デフォルト
+    # Default dataset_dir
     if args.dataset_dir is None:
         if args.dataset == "para":
             args.dataset_dir = "datasets/PARA"
         else:
             args.dataset_dir = "datasets/LAPIS"
 
-    # 1) Projection の読み込み（AADBで学習）
+    # 1) Load the projection (trained on AADB)
     proj = np.load(args.proj_file, allow_pickle=True)
     proj_model_id = proj["model_id"].item()
     feature_source = proj["feature_source"].item()
@@ -411,7 +411,7 @@ def main():
     print(f"        attr_names    = {attr_names}")
     print(f"        coef shape    = {coef.shape}")
 
-    # 2) Personalized データ + GIAA ground truth (if needed)
+    # 2) Load personalized data + GIAA ground truth (if needed)
     if args.dataset == "para":
         print(f"[info] loading personalized PARA (seed={args.seed})...")
         personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
@@ -445,7 +445,7 @@ def main():
     else:
         user_ids = all_user_ids
 
-    # 3) mm_embed 用 VLM（投影と同じモデル）
+    # 3) Load the VLM used by mm_embed (same model as the projection)
     print(f"[info] loading VLM for hidden features: {proj_model_id}")
     mm_model, mm_processor = load_mm_model(proj_model_id, dtype="auto", device_map="auto", attn_impl=None)
     mm_model.eval()
@@ -454,12 +454,12 @@ def main():
 
     def hidden_to_attr_vec(h: np.ndarray) -> np.ndarray:
         xs = (h - scaler_mean) / (scaler_scale + 1e-12)  # [D]
-        raw = xs @ coef.T + intercept                    # [K], 想定レンジ ~[-1,1]
-        # [-1,1] → [1,5] への線形マッピング: f(x) = 2x + 3
+        raw = xs @ coef.T + intercept                    # [K], expected range roughly [-1, 1]
+        # Linear mapping from [-1, 1] to [1, 5]: f(x) = 2x + 3
         mapped = 2.0 * raw + 3.0
-        return mapped  # [K], 想定レンジ [1,5]
+        return mapped  # [K], expected range [1, 5]
 
-    # 4) LoRA対象モデルのロード（Gemma or Qwen どちらか1つ）
+    # 4) Load the target model for LoRA (Gemma or Qwen)
     model_specs = []
     if args.gemma_model_id:
         model_specs.append(("gemma", args.gemma_model_id))
@@ -479,7 +479,7 @@ def main():
         trust_remote_code=True,
     )
 
-    # CoTプロンプト（AADB属性名から）
+    # CoT prompt built from AADB attribute names
     cot_prompt = build_prompt(attr_names)
 
     rows: List[dict] = []
@@ -489,7 +489,7 @@ def main():
         method_name = f"cot_attr_lora_per_user_giaa_gt_{args.support_set}"
     support_set_value = args.support_set
 
-    # 5) ユーザごとに Instruction Tuning
+    # 5) Run instruction tuning user by user
     for user_id in tqdm(user_ids, desc="Users(cot-attr-lora-per-user)"):
         pdata = personalized[user_id]
         if args.support_set == "small":
@@ -520,7 +520,7 @@ def main():
                 )
             a_pred = hidden_to_attr_vec(h)  # [K]
 
-            # target_score の選択
+            # Select target_score
             user_score = float(it.score)
             if args.target_score == "piaa":
                 target = user_score
@@ -645,7 +645,7 @@ def main():
             with torch.inference_mode():
                 gen_ids = model.generate(
                     **model_inputs,
-                    max_new_tokens=200,  # 属性+Overallを生成しきるため十分大きく
+                    max_new_tokens=200,  # large enough to generate all attributes + Overall
                     do_sample=False,
                     temperature=0.0,
                     top_p=1.0,
@@ -677,11 +677,11 @@ def main():
                 }
             )
 
-        # このユーザのLoRAモデルを解放
+        # Release the LoRA model for this user
         del model
         torch.cuda.empty_cache()
 
-    # 6) CSV 保存
+    # 6) Save CSV
     out_path = args.out_csv
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fieldnames = [

@@ -252,8 +252,8 @@ def plot_attr(
     ax.legend(
         loc="lower right",
         fontsize=18,
-        frameon=True,        # 枠内なのでON推奨
-        framealpha=0.9,      # 少し透過（線が隠れすぎない）
+        frameon=True,        # Keep the frame on inside the plot area
+        framealpha=0.9,      # Slight transparency so lines remain visible
     )
 
     plt.tight_layout()

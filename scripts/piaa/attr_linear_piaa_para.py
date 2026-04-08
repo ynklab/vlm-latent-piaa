@@ -97,15 +97,15 @@ def main():
     )
     args = ap.parse_args()
 
-    # 1) General Aesthetic Attributes を読み込み (PARA-GiaaTrain/Val/Test)
+    # 1) Load General Aesthetic Attributes (PARA-GiaaTrain/Val/Test)
     print("[info] loading general aesthetic attributes from PARA-Giaa*.csv ...")
     ga_items = get_para_dataset(None, dataset_dir=args.dataset_dir)
 
-    # AESTHETIC_ATTRIBUTES から "score" を除いたものだけを使う
+    # Use only attributes from AESTHETIC_ATTRIBUTES excluding "score"
     attr_names = [a for a in PARA_ATTRS if a not in ['quality', 'score']]
     print(f"[info] using attributes (excluding 'quality', 'score'): {attr_names}")
 
-    # image_path -> (ga_score, attr_vector) の辞書を構築
+    # Build a dictionary mapping image_path -> (ga_score, attr_vector)
     path_to_ga: Dict[str, float] = {}
     path_to_attrs: Dict[str, np.ndarray] = {}
 
@@ -116,13 +116,13 @@ def main():
 
     print(f"[info] total GA entries: {len(path_to_attrs)}")
 
-    # 2) Personalized データ読み込み
+    # 2) Load personalized data
     print("[info] loading personalized PARA dataset...")
     personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
     all_user_ids = sorted(personalized.keys())
     print(f"[info] num users in personalized dataset: {len(all_user_ids)}")
 
-    # quick: ユーザー数を制限
+    # quick: limit the number of users
     if args.quick is not None and args.quick < len(all_user_ids):
         user_ids = all_user_ids[:args.quick]
         print(f"[info] quick mode: using first {len(user_ids)} users out of {len(all_user_ids)}")
@@ -135,7 +135,7 @@ def main():
     else:
         method_name = "ga_attr_linear_giaa_gt"
 
-    # 3) 各ユーザーについて RidgeCV を学習
+    # 3) Train RidgeCV for each user
     for user_id in tqdm(user_ids, desc="Users(GA-linear)"):
         pdata = personalized[user_id]
         if args.support_set == "small":
@@ -144,16 +144,16 @@ def main():
             support_items = pdata.support_large
         test_items = pdata.test
 
-        # support set の設計
+        # Build the support set
         X_support = []
         y_support = []
         for it in support_items:
             path = it.image_path
             if path not in path_to_attrs:
                 continue
-            # 特徴量
+            # Features
             X_support.append(path_to_attrs[path])
-            # ターゲット（target_score に応じて選択）
+            # Target (selected according to target_score)
             user_score = float(it.score)
             if args.target_score == "piaa":
                 target = user_score
@@ -167,17 +167,17 @@ def main():
         y_support = np.array(y_support, dtype=np.float32)
 
         if len(y_support) < 2:
-            # 学習に十分な support がないユーザはスキップ
+            # Skip users without enough support samples for training
             continue
 
-        # RidgeCV + StandardScaler のパイプライン
+        # RidgeCV + StandardScaler pipeline
         pipe = make_pipeline(
             StandardScaler(with_std=True),
             RidgeCV(alphas=np.logspace(-3, 3, 13)),
         )
         pipe.fit(X_support, y_support)
 
-        # test set 予測（評価は常に user_score に対して行う）
+        # Predict on the test set (evaluation is always against user_score)
         for it in test_items:
             path = it.image_path
             if path not in path_to_attrs:
@@ -200,7 +200,7 @@ def main():
                 }
             )
 
-    # 4) CSV 保存
+    # 4) Save CSV
     out_path = args.out_csv
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fieldnames = [

@@ -156,19 +156,19 @@ def plot_one_json(json_path: str, out_dir: str, split: str, metric: str) -> None
 
     x_pos, x_labels, boundary = _make_xticks(vision_layers, text_layers)
 
-    # ---- xticks: 10つおき + V_0 と LT_1 は必ず表示 ----
+    # ---- xticks: every 10 plus always show V_0 and LT_1 ----
     tick_every = 10
     tick_idx = set(i for i in range(len(x_labels)) if i % tick_every == 0)
 
-    # 必須: V_0 は index 0、LT_1 は boundary + index_of_text_layer(=1)
-    # text_layers は LT_0 を除外済みなので、最初の text layer は LT_{text_layers[0]}。
-    # ここで「LT_1 を必ず表示」= layer番号1が存在する場合はその位置を必ず表示。
+    # Required: V_0 is index 0, and LT_1 is boundary + index_of_text_layer (=1)
+    # LT_0 is already excluded from text_layers, so the first text layer is LT_{text_layers[0]}.
+    # Here, "always show LT_1" means always showing layer 1 when it exists.
     tick_idx.add(0)  # V_0
     if 1 in text_layers:
         lt1_pos = boundary + text_layers.index(1)
         tick_idx.add(lt1_pos)
     else:
-        # もしLT_1が存在しない場合でも、最初のLTを出す（例外的ケース）
+        # If LT_1 does not exist, fall back to the first LT layer
         if len(text_layers) > 0:
             tick_idx.add(boundary)
 
@@ -176,7 +176,7 @@ def plot_one_json(json_path: str, out_dir: str, split: str, metric: str) -> None
 
     # ---- plot ----
     plt.close("all")
-    fig, ax = plt.subplots(figsize=(8, 5.0))   # ← 固定！
+    fig, ax = plt.subplots(figsize=(8, 5.0))   # fixed size
 
     # ---- color palette: avoid collisions even for >10 attrs ----
     # tab20 + tab20b + tab20c => 60 colors
@@ -247,8 +247,8 @@ def plot_one_json(json_path: str, out_dir: str, split: str, metric: str) -> None
     # legend below the plot (inside figure area)
     ax.legend(
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.22),   # 下に出す
-        ncol=4,                        # 1行に詰める列数（適宜調整）
+        bbox_to_anchor=(0.5, -0.22),   # place below the plot
+        ncol=4,                        # number of legend columns in one row
         fontsize=12,
         frameon=False,
         handlelength=1.5,
@@ -257,7 +257,7 @@ def plot_one_json(json_path: str, out_dir: str, split: str, metric: str) -> None
 
     # make room at bottom for legend
     plt.tight_layout()
-    fig.subplots_adjust(bottom=0.28)   # ← legend のために下余白を確保
+    fig.subplots_adjust(bottom=0.28)   # reserve bottom margin for the legend
     os.makedirs(out_dir, exist_ok=True)
 
     out_name = f"{stem}__{split}__{metric}__vision_to_llm_text.pdf"

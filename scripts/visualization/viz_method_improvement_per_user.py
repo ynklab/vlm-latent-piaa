@@ -261,7 +261,7 @@ def main():
         print("[warn] no users with enough items; nothing to plot.")
         return
 
-    # (model_id, support_set) ごとに pivotして 'raw' を baseline に比較
+    # Pivot by (model_id, support_set) and compare each method against 'raw' as the baseline
     grouped = df_rho.groupby(["model_id", "support_set"])
 
     for (model_id, support_set), g_ms in tqdm(grouped, desc="Model/Support combos"):
@@ -293,7 +293,7 @@ def main():
         for method in compare_methods:
             meth_rho = pivot[method].to_numpy(dtype=float)
 
-            # 両方NaNでないユーザだけを対象にする
+            # Only keep users for whom both methods are non-NaN
             mask = ~np.isnan(base_rho) & ~np.isnan(meth_rho)
             x = base_rho[mask]
             y = meth_rho[mask]

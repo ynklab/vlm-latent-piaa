@@ -200,7 +200,7 @@ def plot_v_to_lt_per_attr(
         else:
             y += [np.nan] * len(v_layers)
 
-        # llm_text part (LT_0 excluded)  ※ここでは t_layers がそのまま
+        # llm_text part (LT_0 excluded); here t_layers is used as-is
         if mode in t_mode_to_vals:
             y += t_mode_to_vals[mode]
         else:

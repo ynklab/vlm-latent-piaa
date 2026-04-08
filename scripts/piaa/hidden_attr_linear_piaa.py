@@ -69,7 +69,7 @@ def make_prompt(prompt_mode: str) -> str:
 
 def extract_feature_vector(pools, source: str, layer_idx: int) -> np.ndarray:
     """
-    mm_embed.AllPools から指定 source/layer の 1D feature ベクトルを取り出す。
+    Extract the 1D feature vector for the specified source/layer from mm_embed.AllPools.
     """
     if source == "llm_text":
         vec = pools.llm_text[layer_idx]
@@ -138,14 +138,14 @@ def main():
     )
     args = ap.parse_args()
 
-    # dataset_dir デフォルト
+    # Default dataset_dir
     if args.dataset_dir is None:
         if args.dataset in ["para", "para_hard_images", "para_hard_users"]:
             args.dataset_dir = "datasets/PARA"
         else:
             args.dataset_dir = "datasets/LAPIS"
 
-    # 1) Projection の読み込み
+    # 1) Load the projection
     proj = np.load(args.proj_file, allow_pickle=True)
     proj_model_id = proj["model_id"].item()
     feature_source = proj["feature_source"].item()
@@ -165,7 +165,7 @@ def main():
     print(f"        attr_names    = {attr_names}")
     print(f"        coef shape    = {coef.shape}")
 
-    # 2) personalized データの読み込み (PARA / LAPIS)
+    # 2) Load personalized data (PARA / LAPIS)
     print(f"[info] loading personalized {args.dataset.upper()} dataset...")
     if args.dataset == "para":
         personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
@@ -185,7 +185,7 @@ def main():
     else:
         user_ids = all_user_ids
 
-    # 3) 対象ユーザに出現する全画像パスを収集
+    # 3) Collect all image paths that appear for the selected users
     all_paths = set()
     for user_id in user_ids:
         pdata = personalized[user_id]
@@ -193,7 +193,7 @@ def main():
             all_paths.add(item.image_path)
     print(f"[info] total unique images in selected users' splits: {len(all_paths)}")
 
-    # 4) VLM ロード
+    # 4) Load the VLM
     print(f"[info] loading VLM: {args.model_id}")
     model, processor = load_mm_model(args.model_id, dtype="auto", device_map="auto", attn_impl=None)
     model.eval()
@@ -201,12 +201,12 @@ def main():
     prompt = make_prompt(prompt_mode)
     print(f"[info] prompt_mode (from proj) = {prompt_mode!r}, prompt={prompt!r}")
 
-    # 5) 隠れベクトル → 属性ベクトル の射影関数
+    # 5) Projection function from hidden vectors to attribute vectors
     def hidden_to_attr_vec(h: np.ndarray) -> np.ndarray:
         xs = (h - scaler_mean) / (scaler_scale + 1e-12)  # [D]
         return xs @ coef.T + intercept  # [K]
 
-    # 6) 全画像について hidden → attr_vec_pred をキャッシュ
+    # 6) Cache hidden -> attr_vec_pred for all images
     attr_cache: Dict[str, np.ndarray] = {}
     print("[info] extracting hidden features and projecting to attributes...")
     for path in tqdm(sorted(all_paths), desc="Embed+Project"):
@@ -224,7 +224,7 @@ def main():
 
     print(f"[info] attr_cache size={len(attr_cache)}")
 
-    # 7) ユーザごとの線形モデル (attr_vec_pred -> PIAA)
+    # 7) User-specific linear model (attr_vec_pred -> PIAA)
     rows: List[dict] = []
     method_name = f"hidden_attr_linear_{feature_source}_L{feature_layer}"
 
@@ -274,13 +274,13 @@ def main():
                     "model_id": args.model_id,
                     "support_set": args.support_set,
                     "method": method_name,
-                    "giaa": math.nan,          # ここでは dataset-level GIAA は使わない
+                    "giaa": math.nan,          # dataset-level GIAA is unused here
                     "piaa_pred": piaa_pred,
                     "user_score": user_score,
                 }
             )
 
-    # 8) CSV 保存
+    # 8) Save CSV
     out_path = args.out_csv
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fieldnames = [

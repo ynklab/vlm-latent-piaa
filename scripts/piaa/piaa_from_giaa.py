@@ -54,13 +54,13 @@ def load_giaa_map(
     model_id_filter: str | None = None,
 ) -> Tuple[Dict[str, float], str]:
     """
-    GIAA CSV を読み込み，image_path -> giaa の辞書を作る。
+    Read a GIAA CSV and build an `image_path -> giaa` dictionary.
 
-    期待する列 (vlm_giaa.py の出力):
+    Expected columns (output of `vlm_giaa.py`):
       model_id, dataset, split, image_path, giaa, raw_output
 
-    model_id_filter が指定されていない場合:
-      - CSV 内に 1 種類の model_id しか無いことを要求
+    If model_id_filter is not specified:
+      - require that the CSV contains exactly one model_id
     """
     image_to_giaa: Dict[str, float] = {}
     model_ids: set[str] = set()
@@ -141,18 +141,18 @@ def main():
     )
     args = ap.parse_args()
 
-    # dataset_dir デフォルト
+    # Default dataset_dir
     if args.dataset_dir is None:
         if args.dataset in ["para", "para_hard_images", "para_hard_users"]:
             args.dataset_dir = "datasets/PARA"
         else:
             args.dataset_dir = "datasets/LAPIS"
 
-    # 1) GIAA 読み込み
+    # 1) Load GIAA
     image_to_giaa, model_id_used = load_giaa_map(args.giaa_csv, args.model_id_filter)
     print(f"[info] using model_id={model_id_used} with {len(image_to_giaa)} GIAA entries")
 
-    # 2) Personalized データ読み込み
+    # 2) Load personalized data
     print(f"[info] loading personalized {args.dataset.upper()} dataset...")
     if args.dataset == "para":
         personalized_data = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
@@ -168,14 +168,14 @@ def main():
     bias_rows: List[dict] = []
 
     for user_id, pdata in tqdm(personalized_data.items(), desc="Users"):
-        # support/test の取り出し
+        # Extract support/test splits
         if args.support_set == "small":
             support_items = pdata.support_small
         else:
             support_items = pdata.support_large
         test_items = pdata.test
 
-        # --- Baseline 1: raw (= GIAAそのまま) ---
+        # --- Baseline 1: raw (= use GIAA directly) ---
         for item in test_items:
             path = item.image_path
             # If GIAA is missing, raise a Warning and use nan
@@ -228,7 +228,7 @@ def main():
                 }
             )
 
-    # 3) CSV 保存
+    # 3) Save CSV
     def _write_csv(path: str, rows: List[dict]):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         fieldnames = [

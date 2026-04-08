@@ -54,7 +54,7 @@ from utils.para import get_para_dataset, AESTHETIC_ATTRIBUTES as PARA_ATTRS
 # Model + embedding extractor
 from utils.mm_embed import load_mm_model, build_inputs, extract_all_pools
 
-# --------- prompts (英語) ---------
+# --------- prompts ---------
 
 AESTHETIC_ATTRS_FOR_PROMPT = [
     "BalancingElements", "ColorHarmony", "Content", "DoF",
@@ -152,7 +152,7 @@ def main():
     ap.add_argument("--model_id", required=True,
                     help="Multimodal model id (for mm_embed.load_mm_model).")
 
-    # ★ 複数 source を受け取るよう変更
+    # Accept multiple sources.
     ap.add_argument("--sources", nargs="+", default=["llm_text"],
                     choices=["llm_text", "vision"],
                     help="Which sources to probe: llm_text, vision (you can specify both).")

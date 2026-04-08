@@ -56,10 +56,10 @@ def build_fewshot_messages(
     dataset_name: "PARA" / "LAPIS" (for wording, if needed)
 
     Returns:
-      messages list（apply_chat_template に渡す用の messages）
+      list of messages to pass to apply_chat_template
     """
 
-    # 前段の説明テキスト
+    # Introductory instruction text
     intro_text = (
         "You are an expert judge of image aesthetics.\n"
         "I will show you some example images with this user's ratings on a 1 to 5 scale.\n"
@@ -70,10 +70,10 @@ def build_fewshot_messages(
     )
 
     content = []
-    # 説明テキスト
+    # Instruction text
     content.append({"type": "text", "text": intro_text})
 
-    # サポート画像＋スコア
+    # Support images + scores
     for idx, item in enumerate(support_items):
         img = Image.open(item.image_path).convert("RGB")
         content.append({"type": "image", "image": img})
@@ -84,7 +84,7 @@ def build_fewshot_messages(
             }
         )
 
-    # テスト画像
+    # Test image
     content.append({"type": "image", "image": test_image})
     content.append(
         {
@@ -118,7 +118,7 @@ def set_seed(seed: int = 42):
 
 def build_inputs_from_messages(processor, messages, device: torch.device):
     """
-    messages を processor.apply_chat_template で tokenize して model 入力を作る。
+    Tokenize `messages` with `processor.apply_chat_template` to build model inputs.
     """
     if not hasattr(processor, "apply_chat_template"):
         raise RuntimeError(
@@ -141,7 +141,7 @@ def build_inputs_from_messages(processor, messages, device: torch.device):
 
 def parse_float_from_text(text: str) -> float:
     """
-    出力テキストから最初の float っぽい数字をパースする。
+    Parse the first float-like number from the output text.
     """
     m = re.search(r"[-+]?\d+(\.\d+)?", text)
     if not m:
@@ -202,14 +202,14 @@ def main():
 
     set_seed(args.seed)
 
-    # dataset_dir デフォルト
+    # Default dataset_dir
     if args.dataset_dir is None:
         if args.dataset == "para":
             args.dataset_dir = "datasets/PARA"
         else:
             args.dataset_dir = "datasets/LAPIS"
 
-    # Personalized データ読み込み
+    # Load personalized data
     print(f"[info] loading personalized {args.dataset.upper()} dataset...")
     if args.dataset == "para":
         personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
@@ -219,14 +219,14 @@ def main():
     all_user_ids = sorted(personalized.keys())
     print(f"[info] num users in personalized dataset: {len(all_user_ids)}")
 
-    # quick: ユーザ数を制限
+    # quick: limit the number of users
     if args.quick is not None and args.quick < len(all_user_ids):
         user_ids = all_user_ids[:args.quick]
         print(f"[info] quick mode: using first {len(user_ids)} users out of {len(all_user_ids)}")
     else:
         user_ids = all_user_ids
 
-    # モデル群のロード（Gemma/Qwenのどちらか or 両方）
+    # Load the requested model set (Gemma, Qwen, or both)
     model_specs = []
     if args.gemma_model_id:
         model_specs.append(("gemma", args.gemma_model_id))
@@ -263,7 +263,7 @@ def main():
 
         method_name = f"vlm_fewshot_{args.support_set}"
 
-        # 各ユーザに対して few-shot 推論
+        # Run few-shot inference for each user
         for user_id in tqdm(user_ids, desc=f"Users[{mid}]"):
             pdata = personalized[user_id]
             if args.support_set == "small":
@@ -272,11 +272,11 @@ def main():
                 support_items = pdata.support_large
             test_items = pdata.test
 
-            # support が足りなければスキップ
+            # Skip users with insufficient support examples
             if len(support_items) < 1:
                 continue
 
-            # test セットに対して1枚ずつ予測
+            # Predict one test image at a time
             for item in tqdm(
                 test_items,
                 desc=f"  Test[{user_id}]",
@@ -318,13 +318,13 @@ def main():
                         "model_id": mid,
                         "support_set": args.support_set,
                         "method": method_name,
-                        "giaa": math.nan,          # few-shotなので GIAA は未使用
+                        "giaa": math.nan,          # GIAA is unused in few-shot mode
                         "piaa_pred": score_pred,
                         "user_score": user_score,
                     }
                 )
 
-    # CSV 保存
+    # Save CSV
     out_path = args.out_csv
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fieldnames = [

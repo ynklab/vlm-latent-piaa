@@ -21,7 +21,7 @@ For each user u:
 Outputs a CSV with one row per user × test image:
   user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
 
-method 名:
+Method name:
   residual_linear_<source_a>_L<layer_a>__plus__<source_b>_L<layer_b>
 """
 
@@ -146,7 +146,7 @@ def extract_single_feature(
             raise RuntimeError("vision_layers is None; vision source not available for this model.")
         vec = pools.vision_layers[layer_idx]
     elif source == "bridge_text":
-        vec = pools.bridge_text[0]  # layer_idx は無視
+        vec = pools.bridge_text[0]  # layer_idx is ignored
     elif source == "bridge_visual":
         vec = pools.bridge_visual[0]
     else:
@@ -163,7 +163,7 @@ def extract_dual_feature(
     layer_b: int,
 ) -> np.ndarray:
     """
-    2つの source/layer からベクトルを取り、concat して返す。
+    Extract vectors from two source/layer pairs, concatenate them, and return the result.
     """
     va = extract_single_feature(pools, source_a, layer_a)
     vb = extract_single_feature(pools, source_b, layer_b)

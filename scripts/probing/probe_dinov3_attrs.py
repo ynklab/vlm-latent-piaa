@@ -2,10 +2,12 @@
 # -*- coding: utf-8 -*-
 
 """
-DINOv3-B/16 (facebook/dinov3-vitb16-pretrain-lvd1689m) の全レイヤー特徴から，
-AADB / PARA の美的属性に対して layer-wise linear probing を行うスクリプト。
+Run layer-wise linear probing on AADB / PARA aesthetic attributes using
+all DINOv3-B/16 layer features
+(`facebook/dinov3-vitb16-pretrain-lvd1689m`).
 
-出力 JSON フォーマットは Qwen/Gemma 用の probe_attrs_* とほぼ同じ:
+The output JSON format is almost the same as the `probe_attrs_*` outputs
+used for Qwen/Gemma:
 {
   "config": {
     "dinov3_model_id": "...",
@@ -51,15 +53,15 @@ from sklearn.pipeline import make_pipeline
 
 import torch
 
-# データセットローダ
+# Dataset loaders
 from utils.aadb import get_aadb_dataset, AESTHETIC_ATTRIBUTES as AADB_ATTRS
 from utils.para import get_para_dataset, AESTHETIC_ATTRIBUTES as PARA_ATTRS
 
-# DINOv3 ローダ＆全レイヤー特徴抽出
+# DINOv3 loader and all-layer feature extraction
 from utils.mm_embed import load_dinov3_model, extract_dinov3_all_layer_features
 
 
-# ---------- 評価ユーティリティ ----------
+# ---------- Evaluation utilities ----------
 
 def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     rho = spearmanr(y_true, y_pred).correlation
@@ -78,7 +80,7 @@ def _finite_report(X: np.ndarray, name: str):
         n_bad = int(bad.sum())
         max_abs = float(np.nanmax(np.abs(X[np.isfinite(X)]))) if np.isfinite(X).any() else float("nan")
         print(f"[warn] {name}: non-finite={n_bad}, max_abs_finite={max_abs}")
-        # どの行（画像）が壊れているか
+        # Report which rows (images) contain invalid values.
         bad_rows = np.where(~np.isfinite(X).all(axis=1))[0]
         print(f"       bad_rows (first 10)={bad_rows[:10].tolist()}")
         return True
@@ -94,8 +96,8 @@ def _fit_eval_one_layer(
     yte: np.ndarray,
 ) -> Tuple[Dict, Dict, Dict]:
     """
-    1レイヤ分の特徴 (Xtr, Xva, Xte) に対して Ridge 回帰を行い，
-    train / val / test の metrics を返す。
+    Run Ridge regression on one layer's features `(Xtr, Xva, Xte)` and
+    return train / val / test metrics.
     """
     pipe = make_pipeline(
         StandardScaler(with_std=True),
@@ -125,7 +127,7 @@ def _items_to_paths_and_targets(items, attrs: List[str]) -> Tuple[List[str], Dic
     targets: Dict[str, List[float]] = {a: [] for a in attrs}
     for it in items:
         for a in attrs:
-            # attributes dict に入っている前提（AADB / PARA とも）
+            # Assume the attribute is stored in the `attributes` dict.
             targets[a].append(float(it.attributes[a]))
     return paths, {k: np.array(v, dtype=np.float32) for k, v in targets.items()}
 
@@ -176,7 +178,7 @@ def main():
     )
     args = ap.parse_args()
 
-    # ----- dataset 設定 -----
+    # ----- Dataset setup -----
     if args.dataset_dir is None:
         args.dataset_dir = "datasets/aadb" if args.dataset == "aadb" else "datasets/PARA"
 
@@ -190,7 +192,7 @@ def main():
         get_dataset = get_para_dataset
         attrs = list(PARA_ATTRS)
         train_split = args.train_split or "train"
-        # PARA は train/test のみなので、とりあえず val=test として共有（必要なら内部splitで改善）
+        # PARA only has train/test, so reuse test as validation here.
         val_split   = args.val_split   or "test"
         test_split  = args.test_split  or "test"
 
@@ -198,7 +200,7 @@ def main():
     print(f"[info] splits: train={train_split}, val={val_split}, test={test_split}")
     print(f"[info] attributes: {attrs}")
 
-    # ----- DINOv3 Vision モデルロード -----
+    # ----- Load the DINOv3 vision model -----
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, image_processor, device = load_dinov3_model(
         model_id=args.dinov3_model_id,
@@ -206,7 +208,7 @@ def main():
         device=device,
     )
 
-    # ----- データ読み込み -----
+    # ----- Load data -----
     tr_items = get_dataset(train_split, dataset_dir=args.dataset_dir)
     va_items = get_dataset(val_split,   dataset_dir=args.dataset_dir)
     te_items = get_dataset(test_split,  dataset_dir=args.dataset_dir)
@@ -222,7 +224,7 @@ def main():
 
     print(f"[info] N train={len(tr_paths)}, val={len(va_paths)}, test={len(te_paths)}")
 
-    # ----- DINOv3 全レイヤー特徴抽出 -----
+    # ----- Extract all DINOv3 layer features -----
     print("[info] extracting DINOv3 all-layer features (train)")
     Xtr_layers = extract_dinov3_all_layer_features(model, image_processor, device, tr_paths)
     print("[info] extracting DINOv3 all-layer features (val)")
@@ -233,7 +235,7 @@ def main():
     n_layers = len(Xtr_layers)
     print(f"[info] #layers (including embedding layer) = {n_layers}")
 
-    # ----- 属性ごとに layer-wise probing -----
+    # ----- Run layer-wise probing for each attribute -----
     results = {
         "config": {
             "dinov3_model_id": args.dinov3_model_id,
@@ -293,7 +295,7 @@ def main():
             "best": best,
         }
 
-    # ----- JSON 保存 -----
+    # ----- Save JSON -----
     os.makedirs(os.path.dirname(args.out_json) or ".", exist_ok=True)
     with open(args.out_json, "w") as f:
         json.dump(results, f, indent=2)

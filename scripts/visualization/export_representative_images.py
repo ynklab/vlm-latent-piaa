@@ -5,13 +5,13 @@
 Export representative images for qualitative comparison across PIAA methods,
 and create thumbnail-style grids (contact sheets) with matplotlib.
 
-- ランダムにユーザーをサンプル
-- 各ユーザーについて:
-  - GT (user_score) に基づく gt_low / gt_mid / gt_high の代表画像を n_imgs 枚
-  - 各 method について:
-      * piaa_pred に基づく pred_low / pred_mid / pred_high の代表画像を n_imgs 枚
-      * err = piaa_pred - user_score に基づく err_pos / err_zero / err_neg の代表画像を n_imgs 枚
-  - さらに low / mid / high のサムネイルを縦に stack した1枚の画像も作成:
+- Randomly sample users
+- For each user:
+  - export `n_imgs` representative images for gt_low / gt_mid / gt_high based on GT (`user_score`)
+  - for each method:
+      * export `n_imgs` representative images for pred_low / pred_mid / pred_high based on `piaa_pred`
+      * export `n_imgs` representative images for err_pos / err_zero / err_neg based on `err = piaa_pred - user_score`
+  - also create one vertically stacked image of low / mid / high thumbnails:
       * user_<id>/gt_stacked.png
       * user_<id>/method_<m>/pred_stacked.png
 """
@@ -83,11 +83,11 @@ def load_piaa_from_dir(input_dir: str) -> pd.DataFrame:
 
 def sample_group(df: pd.DataFrame, col: str, n: int, group: str) -> pd.DataFrame:
     """
-    df: ユーザー内の DataFrame (image_path, user_score, piaa_pred, ...)
-    col: ソート基準 ('user_score', 'piaa_pred', 'err', 'abs_err')
-    group: 'high' / 'mid' / 'low' など
+    df: per-user DataFrame (image_path, user_score, piaa_pred, ...)
+    col: sorting key ('user_score', 'piaa_pred', 'err', 'abs_err')
+    group: e.g. 'high' / 'mid' / 'low'
 
-    戻り値: subset DataFrame
+    Returns: subset DataFrame
     """
     if df.empty or n <= 0:
         return df.iloc[0:0]
@@ -117,9 +117,9 @@ def sample_group(df: pd.DataFrame, col: str, n: int, group: str) -> pd.DataFrame
 
 def copy_images(sub_df: pd.DataFrame, dst_dir: str, prefix: str):
     """
-    sub_df: image_path, user_score, piaa_pred, err などの列を持つ DataFrame
-    dst_dir: 出力ディレクトリ
-    prefix: ファイル名に付けるprefix (e.g. 'gt_high', 'pred_low', 'err_pos')
+    sub_df: DataFrame containing columns such as image_path, user_score, piaa_pred, and err
+    dst_dir: output directory
+    prefix: filename prefix (e.g. 'gt_high', 'pred_low', 'err_pos')
     """
     os.makedirs(dst_dir, exist_ok=True)
     for row_idx, row in sub_df.iterrows():
@@ -140,10 +140,10 @@ def copy_images(sub_df: pd.DataFrame, dst_dir: str, prefix: str):
 
 def create_thumbnail_grid(sub_df: pd.DataFrame, out_path: str, title: str, max_cols: int = 5):
     """
-    sub_df: image_path, user_score, piaa_pred, err を含む DataFrame
-    out_path: 保存先PNG
-    title: グリッド全体のタイトル
-    max_cols: グリッドの最大列数（画像数が多いときに折り返す）
+    sub_df: DataFrame containing image_path, user_score, piaa_pred, and err
+    out_path: output PNG path
+    title: title of the whole grid
+    max_cols: maximum number of grid columns before wrapping
     """
     if sub_df.empty:
         return
@@ -204,18 +204,18 @@ def create_stacked_thumbnail(groups, out_path, title, max_cols=5,
     """
     Table-style 2xK grid (High / Low rows) with explicit borders and row headers.
 
-    - groups: [(df_high, "High Score"), (df_low, "Low Score")] の想定
-    - title: 図のタイトル（手法名など）
-    - label_w: 左側の行ラベル領域の幅（figure幅に対する割合）
-    - top_h  : 上側のタイトル領域の高さ（figure高さに対する割合）
-    - annotate_scores: True なら各セル下に gt/pred/err の小注記を入れる
+    - groups: expected format is [(df_high, "High Score"), (df_low, "Low Score")]
+    - title: figure title (e.g. method name)
+    - label_w: width of the row-label area on the left (fraction of figure width)
+    - top_h  : height of the top title area (fraction of figure height)
+    - annotate_scores: if True, add small gt/pred/err annotations below each cell
     """
 
     total_images = sum(len(df) for df, _ in groups)
     if total_images == 0:
         return
 
-    # ---- 固定：2行（High/Low）を想定。必要なら一般化可 ----
+    # ---- Fixed assumption: 2 rows (High/Low). Generalize if needed. ----
     group_dfs = [df for (df, _) in groups]
     group_labels = ["High Score", "Low Score"]
 
@@ -225,7 +225,7 @@ def create_stacked_thumbnail(groups, out_path, title, max_cols=5,
     if rows == 0 or cols == 0:
         return
 
-    # Figure size: 1セル=正方形気味に
+    # Figure size: keep each cell roughly square
     fig_w = 3.0 * cols / (1.0 - label_w)
     fig_h = 3.0 * rows / (1.0 - top_h)
     plt.close("all")
@@ -239,14 +239,14 @@ def create_stacked_thumbnail(groups, out_path, title, max_cols=5,
     elif cols == 1:
         axes = np.array([[ax] for ax in axes])
 
-    # レイアウト：左に行ラベル用の余白、上にタイトル用余白を確保
+    # Layout: reserve space on the left for row labels and on top for the title
     fig.subplots_adjust(
         left=label_w, right=0.99,
         top=1.0 - top_h, bottom=0.04,
         wspace=0.02, hspace=0.02
     )
 
-    # ----- 各セルに画像を描画 -----
+    # ----- Draw images in each cell -----
     for r, df_group in enumerate(group_dfs):
         paths = df_group["image_path"].tolist()
         gt_scores = df_group.get("user_score", pd.Series([np.nan]*len(df_group))).tolist()
@@ -282,8 +282,8 @@ def create_stacked_thumbnail(groups, out_path, title, max_cols=5,
                     zorder=10,
                 )
 
-    # ----- 罫線を描く（table感の主役） -----
-    # 各 axes の位置を figure 座標で取り、セル境界に rectangle を重ねる
+    # ----- Draw borders to create the table-like layout -----
+    # Get each axes position in figure coordinates and overlay rectangles on cell boundaries
     for r in range(rows):
         for c in range(cols):
             ax = axes[r, c]
@@ -299,9 +299,9 @@ def create_stacked_thumbnail(groups, out_path, title, max_cols=5,
             )
             fig.add_artist(rect)
 
-    # ----- 行ラベル（表の左） -----
+    # ----- Row labels (left side of the table) -----
     for r, lbl in enumerate(group_labels):
-        # 行の中央yを axes の位置から取る
+        # Use the axes positions to compute the y-center of each row
         pos = axes[r, 0].get_position()
         y_center = (pos.y0 + pos.y1) / 2
         fig.text(
@@ -311,12 +311,12 @@ def create_stacked_thumbnail(groups, out_path, title, max_cols=5,
             bbox=dict(
                 boxstyle="round,pad=0.25",
                 facecolor="white",
-                alpha=0.6,          # ← 透過（好みで 0.5〜0.8）
+                alpha=0.6,          # transparency (adjust within 0.5-0.8 if desired)
                 edgecolor="none",
             ),
         )
 
-    # # ----- 列ラベル（任意）：#1, #2, ... -----
+    # # ----- Optional column labels: #1, #2, ... -----
     # for c in range(cols):
     #     pos = axes[0, c].get_position()
     #     x_center = (pos.x0 + pos.x1) / 2
@@ -327,7 +327,7 @@ def create_stacked_thumbnail(groups, out_path, title, max_cols=5,
     #         fontsize=14, fontweight="bold"
     #     )
 
-    # ----- タイトル -----
+    # ----- Title -----
     fig.suptitle(title, fontsize=24, y=0.995)
 
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -377,11 +377,11 @@ def main():
 
     os.makedirs(args.out_dir, exist_ok=True)
 
-    # 1) 全データ読み込み
+    # 1) Load all data
     df_all = load_piaa_from_dir(args.input_dir)
     print(f"[info] total rows = {len(df_all)}")
 
-    # 2) 有効ユーザーを抽出
+    # 2) Extract valid users
     user_counts = df_all["user_id"].value_counts()
     valid_users = user_counts[user_counts >= args.min_items_per_user].index.to_list()
     print(f"[info] users with >= {args.min_items_per_user} items: {len(valid_users)}")
@@ -397,7 +397,7 @@ def main():
         sampled_users = sorted(valid_users)
     print(f"[info] sampled users: {sampled_users}")
 
-    # 3) グローバルな (method, support_set) の組を把握（参考用）
+    # 3) Gather global (method, support_set) pairs for reference
     global_method_groups = (
         df_all[["method", "support_set"]]
         .drop_duplicates()
@@ -408,7 +408,7 @@ def main():
     for m, s in global_method_groups:
         print(f"  method={m}, support_set={s}")
 
-    # 4) ユーザーごとに処理
+    # 4) Process each user
     for user_id in sampled_users:
         df_user = df_all[df_all["user_id"] == user_id].copy()
         if df_user.empty:
@@ -417,7 +417,7 @@ def main():
         user_dir = os.path.join(args.out_dir, f"user_{sanitize(user_id)}")
         os.makedirs(user_dir, exist_ok=True)
 
-        # --- GTベースの代表画像 (手法に依存しない) ---
+        # --- GT-based representative images (method-independent) ---
         df_user_gt = df_user[["image_path", "user_score"]].drop_duplicates("image_path").copy()
         df_user_gt["err"] = np.nan
         df_user_gt["piaa_pred"] = np.nan
@@ -437,7 +437,7 @@ def main():
             grid_path = os.path.join(group_dir, "grid.png")
             create_thumbnail_grid(sub, grid_path, title=f"user={user_id} {label}")
 
-        # low / mid / high を stack した1枚 (GT)
+        # One GT image stacking low / mid / high thumbnails
         stacked_gt_path = os.path.join(user_dir, "gt_stacked.pdf")
         create_stacked_thumbnail(
             gt_subs,
@@ -447,7 +447,7 @@ def main():
             max_cols=args.n_imgs,
         )
 
-        # --- このユーザーに対する (method, support_set) の組を列挙 ---
+        # --- Enumerate (method, support_set) pairs for this user ---
         method_groups_user = (
             df_user[["method", "support_set"]]
             .drop_duplicates()
@@ -474,7 +474,7 @@ def main():
 
             df_um["err"] = df_um["piaa_pred"] - df_um["user_score"]
 
-            # ディレクトリ名に support_set も含める
+            # Include support_set in the directory name as well
             method_dir_name = f"method_{sanitize(method)}__sup_{sanitize(sup)}"
             method_dir = os.path.join(user_dir, method_dir_name)
             os.makedirs(method_dir, exist_ok=True)
@@ -508,7 +508,7 @@ def main():
                     title=f"user={user_id} method={method} sup={sup} {label}",
                 )
 
-            # low / mid / high の pred サムネイルを stack した1枚
+            # One image stacking low / mid / high predicted thumbnails
             stacked_pred_path = os.path.join(method_dir, "pred_stacked.pdf")
             if method == 'direct_linear_llm_text_L15':
                 title = "Linear-Hidden"
@@ -526,7 +526,7 @@ def main():
                 max_cols=args.n_imgs,
             )
 
-            # error-based groups: pos / zero / neg（画像コピーのみ）
+            # Error-based groups: pos / zero / neg (copy images only)
             df_pos = df_um.sort_values(by="err", ascending=False).head(args.n_imgs)
             copy_images(df_pos, os.path.join(method_dir, "err_pos"), prefix="err_pos")
 

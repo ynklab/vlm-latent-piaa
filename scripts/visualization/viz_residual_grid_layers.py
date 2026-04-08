@@ -12,7 +12,7 @@ Input:
 
       user_id, image_path, model_id, support_set, method, giaa, piaa_pred, user_score
 
-    method には例えば以下のような形式を想定:
+    Expected method names include formats such as:
       - residual_linear_<feature_source>_L<layer>
       - direct_linear_<feature_source>_L<layer>
       - residual_linear_giaa_gt_<feature_source>_L<layer>
@@ -56,7 +56,7 @@ def sanitize(s: str) -> str:
 
 def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     """
-    Spearman ρ と R² を計算。NaN を含むペアはドロップ。
+    Compute Spearman's rho and R^2. Drop pairs containing NaN.
     """
     mask = ~np.isnan(y_true) & ~np.isnan(y_pred)
     y_true = y_true[mask]
@@ -78,8 +78,8 @@ def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
 
 def load_from_dir(input_dir: str) -> pd.DataFrame:
     """
-    指定ディレクトリ内の CSV をすべて読み込み，
-    baseline 用カラムを持つものだけを結合して返す。
+    Read all CSVs in the specified directory,
+    and return the concatenation of only files with baseline columns.
     """
     required = {
         "user_id",
@@ -122,8 +122,8 @@ def load_from_dir(input_dir: str) -> pd.DataFrame:
 
 def compute_per_user_metrics(df_all: pd.DataFrame, min_items: int = 2) -> pd.DataFrame:
     """
-    (model_id, support_set, method, user_id) ごとに per-user metrics を計算。
-    min_items 未満のユーザはスキップ。
+    Compute per-user metrics for each (model_id, support_set, method, user_id).
+    Skip users with fewer than min_items examples.
     """
     groups = df_all.groupby(["model_id", "support_set", "method", "user_id"])
     rows = []
@@ -154,22 +154,22 @@ def compute_per_user_metrics(df_all: pd.DataFrame, min_items: int = 2) -> pd.Dat
 
 def parse_method(method: str):
     """
-    method 文字列から (family, feature_source, layer_idx) を抽出する。
+    Parse (family, feature_source, layer_idx) from the method string.
 
     family:
       - residual_linear
       - direct_linear
       - residual_linear_giaa_gt
       - direct_linear_giaa_gt
-      など，接頭辞部分。
+      i.e. the prefix portion of the method name.
 
-    想定形式:
+    Expected format:
       residual_linear_<source>_L<layer>
       direct_linear_<source>_L<layer>
       residual_linear_giaa_gt_<source>_L<layer>
       direct_linear_giaa_gt_<source>_L<layer>
     """
-    # まず giaa_gt 付き
+    # First handle variants with giaa_gt
     m = re.match(r"^(residual_linear_giaa_gt|direct_linear_giaa_gt)_(.+)_L(\d+)$", method)
     if m:
         family = m.group(1)
@@ -177,7 +177,7 @@ def parse_method(method: str):
         layer_idx = int(m.group(3))
         return family, feature_source, layer_idx
 
-    # 通常版
+    # Standard variant
     m = re.match(r"^(residual_linear|direct_linear)_(.+)_L(\d+)$", method)
     if m:
         family = m.group(1)
@@ -293,7 +293,7 @@ def main():
     for (model_id, support_set, method), g in grouped:
         family, feat_src, layer_idx = parse_method(method)
         if family is None:
-            # raw / bias / MLP など grid 以外の手法はここでスキップ
+            # Skip non-grid methods such as raw / bias / MLP here
             continue
         mean_rho = g["rho"].mean()
         mean_r2 = g["r2"].mean()

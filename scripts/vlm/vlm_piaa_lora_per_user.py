@@ -91,10 +91,10 @@ def parse_float_from_text(text: str) -> float:
 
 class UserPIAALoRADataset(Dataset):
     """
-    1ユーザー分の support set を LoRA 学習用の Dataset に落とし込む。
+    Convert one user's support set into a Dataset for LoRA training.
 
     - items: List[{"image_path": ..., "score": ...}] (score in [1,5])
-    - __getitem__ で (input_ids, attention_mask, labels) を返す。
+    - __getitem__ returns (input_ids, attention_mask, labels).
     """
 
     def __init__(self, items, processor, device, resize_image: bool, max_side: int):
@@ -108,8 +108,8 @@ class UserPIAALoRADataset(Dataset):
         return len(self.items)
 
     def _build_messages(self, image: Image.Image, score: float):
-        # ユーザ: 画像＋質問
-        # アシスタント: スコアをテキストで返す
+        # User: image + question
+        # Assistant: return the score as text
         messages = [
             {
                 "role": "user",
@@ -151,7 +151,7 @@ class UserPIAALoRADataset(Dataset):
 
 def collate_fn(batch):
     """
-    左詰めpaddingのためのcollate。labels は input_ids と同一（prompt+回答全部）。
+    Collate function for left-aligned padding. `labels` is identical to `input_ids` (prompt + full answer).
     """
     input_ids = [b["input_ids"] for b in batch]
     attention_mask = [b["attention_mask"] for b in batch]
@@ -277,14 +277,14 @@ def main():
 
     set_seed(args.seed)
 
-    # dataset_dir デフォルト
+    # Default dataset_dir
     if args.dataset_dir is None:
         if args.dataset == "para":
             args.dataset_dir = "datasets/PARA"
         else:
             args.dataset_dir = "datasets/LAPIS"
 
-    # Personalized データ読み込み
+    # Load personalized data
     print(f"[info] loading personalized {args.dataset.upper()} dataset...")
     if args.dataset == "para":
         personalized = get_personalized_para_dataset(seed=args.seed, dataset_dir=args.dataset_dir)
@@ -300,7 +300,7 @@ def main():
     else:
         user_ids = all_user_ids
 
-    # モデル指定（Gemma or Qwenのどちらか1つ）
+    # Select one model (Gemma or Qwen)
     model_specs = []
     if args.gemma_model_id:
         model_specs.append(("gemma", args.gemma_model_id))
@@ -331,13 +331,13 @@ def main():
 
     processor = AutoProcessor.from_pretrained(mid, trust_remote_code=True)
 
-    # LoRA設定（テキスト側Attention/MLP用の典型的ターゲット）
+    # LoRA setup (typical text-side Attention/MLP targets)
     lora_targets = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     rows: List[dict] = []
     method_name = f"lora_per_user_{args.support_set}"
 
-    # ユーザごとに LoRA モデルを作って train & eval
+    # Create a LoRA model per user and train / evaluate it
     for user_id in tqdm(user_ids, desc="Per-user LoRA"):
         pdata = personalized[user_id]
         if args.support_set == "small":
@@ -349,19 +349,19 @@ def main():
         if len(support_items) < 1:
             continue
 
-        # 学習データ （user専用）
+        # Training data (user-specific)
         train_examples = [
             {"image_path": it.image_path, "score": float(it.score)}
             for it in support_items
         ]
-        # 評価データ
+        # Evaluation data
         eval_items = [
             {"image_path": it.image_path, "score": float(it.score)}
             for it in test_items
         ]
 
-        # ベースモデルからLoRA付きモデルを作る（簡易実装：毎ユーザごとに get_peft_model）
-        # ※効率面では後述の注意を参照
+        # Build a LoRA-augmented model from the base model (simple implementation: call get_peft_model per user)
+        # See the note below regarding efficiency
         model = get_peft_model(
             base_model.__class__.from_pretrained(
                 mid,
@@ -484,11 +484,11 @@ def main():
                 }
             )
 
-        # LoRAモデルを解放（次のユーザのために）
+        # Release the LoRA model before moving to the next user
         del model
         torch.cuda.empty_cache()
 
-    # CSV 保存
+    # Save CSV
     out_path = args.out_csv
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fieldnames = [

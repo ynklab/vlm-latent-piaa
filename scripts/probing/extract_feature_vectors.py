@@ -4,37 +4,37 @@
 """
 Extract hidden feature vectors for a given (dataset, projection) and save them as a .npz file.
 
-前提:
-  - --proj_file には AADB で学習した射影ファイル
-    (`scripts.probing.train_attr_projection_aadb` の出力) が渡される。
-    そこから以下を読み取る:
+Assumptions:
+  - `--proj_file` is a projection file trained on AADB
+    (output of `scripts.probing.train_attr_projection_aadb`).
+  - The script reads the following metadata from it:
       * model_id
       * feature_source
       * feature_layer
       * prompt_mode
 
-対応データセット:
+Supported datasets:
   - PARA  : utils.para
   - LAPIS : utils.lapis
   - AADB  : utils.aadb
 
 mode:
-  - all          : データセット中の全画像 (GIAA 観点)
-  - personalized : personalized split (PIAA 観点) に現れる画像だけ
+  - all          : all images in the dataset (GIAA setting)
+  - personalized : only images appearing in personalized splits (PIAA setting)
 
-出力:
-  - --out_npz に以下を保存:
+Output:
+  - `--out_npz` stores:
 
       dataset       : "para" / "lapis" / "aadb"
-      dataset_dir   : パス
+      dataset_dir   : dataset path
       mode          : "all" / "personalized"
-      seed          : personalized split 用 seed
-      proj_file     : 射影ファイルのパス
+      seed          : seed used for personalized splits
+      proj_file     : projection file path
 
-      model_id      : VLM モデルID (proj_file から取得)
-      feature_source: "llm_text" など (proj_file から取得)
-      feature_layer : int         (proj_file から取得)
-      prompt_mode   : "base" 等   (proj_file から取得)
+      model_id      : VLM model ID (read from proj_file)
+      feature_source: e.g. "llm_text" (read from proj_file)
+      feature_layer : int (read from proj_file)
+      prompt_mode   : e.g. "base" (read from proj_file)
 
       image_paths   : [N] (str array)
       features      : [N, D] (float32 array)
@@ -92,7 +92,8 @@ def make_prompt(prompt_mode: str) -> str:
 
 def extract_feature_from_pools(pools, source: str, layer_idx: int) -> np.ndarray:
     """
-    mm_embed.extract_all_pools の AllPools から source/layer に対応する 1D feature を取り出す。
+    Extract the 1D feature vector corresponding to the requested source/layer
+    from `mm_embed.extract_all_pools`.
     """
     if source == "llm_text":
         vec = pools.llm_text[layer_idx]
@@ -170,7 +171,7 @@ def main():
 
     os.makedirs(os.path.dirname(args.out_npz) or ".", exist_ok=True)
 
-    # ---------- 1) projectionファイルから model / feature 情報を読み出す ----------
+    # ---------- 1) Read model / feature metadata from the projection file ----------
 
     proj = np.load(args.proj_file, allow_pickle=True)
     model_id = proj["model_id"].item()
@@ -184,7 +185,7 @@ def main():
     print(f"       feature_layer = {feature_layer}")
     print(f"       prompt_mode   = {prompt_mode}")
 
-    # ---------- 2) 対象となる image_paths の集合を集める ----------
+    # ---------- 2) Collect the target image paths ----------
 
     image_paths: Set[str] = set()
 
@@ -211,7 +212,7 @@ def main():
                     image_paths.add(it.image_path)
 
     else:  # aadb
-        # AADB は personalized split がないので mode は実質 all
+        # AADB has no personalized split, so mode is effectively always "all".
         splits = ["train", "validation", "test"]
         for split in splits:
             items = get_aadb_dataset(split, dataset_dir=args.dataset_dir)
@@ -224,7 +225,7 @@ def main():
 
     print(f"[info] dataset={args.dataset}, mode={args.mode}, num_images={len(image_paths)}")
 
-    # ---------- 3) VLM をロードして特徴抽出 ----------
+    # ---------- 3) Load the VLM and extract features ----------
 
     print(f"[info] loading VLM for features: {model_id}")
     model, processor = load_mm_model(model_id, dtype="auto", device_map="auto", attn_impl=None)
@@ -263,7 +264,7 @@ def main():
 
     print(f"[info] features shape = {features.shape}, num_images_used = {len(used_paths)}")
 
-    # ---------- 4) .npz 保存 ----------
+    # ---------- 4) Save the .npz file ----------
 
     np.savez(
         args.out_npz,

@@ -162,7 +162,7 @@ def build_group_headers(models: List[str]) -> Tuple[str, str]:
     header2 = " & ".join(parts2) + " \\\\"
     return header1, header2
 
-# --- render 部分だけ差し替えればOKです（他は v5 と同じ） ---
+# --- Only the render section differs here; the rest is the same as v5 ---
 
 def render_latex_table_star_tabularx(
     attributes: List[str],
