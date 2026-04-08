@@ -43,6 +43,14 @@ pip install -e .
 
 `torch` is intentionally left hardware-agnostic in `pyproject.toml`. If you need a CUDA-specific build, install the appropriate `torch` and `torchvision` wheels for your machine before running the heavier VLM scripts.
 
+Some scripts load gated or large models directly from Hugging Face. In those cases, set your Hugging Face access token as an environment variable before running the script:
+
+```bash
+export HF_TOKEN=your_huggingface_token
+```
+
+This is especially relevant for VLM-based scripts and feature-extraction / probing scripts that call `transformers.from_pretrained(...)` on remote model IDs.
+
 ```bash
 cp requirements.local.example.txt requirements.local.txt
 uv sync
@@ -92,6 +100,38 @@ python -m scripts.reporting.bootstrap_piaa_significance --help
 python -m ici.phase1_train_resnet --help
 python -m ici.phase2_train_graph --help
 python -m ici.phase3_personalize --help
+```
+
+## Example Commands
+
+Linear probing on AADB with Qwen3-VL 2B:
+
+```bash
+python -m scripts.probing.probing \
+  --dataset aadb \
+  --dataset_dir datasets/aadb \
+  --train_split train \
+  --val_split validation \
+  --test_split test \
+  --model_id Qwen/Qwen3-VL-2B-Instruct \
+  --prompt_mode base \
+  --out_json outputs/probing/qwen3vl2b_aadb_base.json
+```
+
+Direct linear PIAA on LAPIS using language-decoder features:
+
+```bash
+python -m scripts.piaa.train_direct_linear_piaa \
+  --dataset lapis \
+  --dataset_dir datasets/LAPIS \
+  --model_id Qwen/Qwen3-VL-2B-Instruct \
+  --feature_source llm_text \
+  --feature_layer 15 \
+  --support_set large \
+  --prompt_mode base \
+  --target_score piaa \
+  --seed 42 \
+  --out_csv outputs/piaa/lapis_direct_linear_qwen3vl2b_llm_text_L15.csv
 ```
 
 ## Notes For Public Release
