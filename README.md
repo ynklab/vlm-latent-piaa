@@ -69,6 +69,14 @@ Key annotation files referenced by the loaders include:
 
 If your data lives elsewhere, pass `--dataset_dir` explicitly.
 
+## Dataset Sources
+
+- `AADB`: derived from the AADB release associated with Kong et al., "Photo Aesthetics Ranking Network with Attributes and Content Adaptation" (ECCV 2016). The dataset and related files are distributed from the `deepImageAestheticsAnalysis` repository: <https://github.com/aimerykong/deepImageAestheticsAnalysis>
+- `PARA`: based on Yang et al., "Personalized Image Aesthetics Assessment With Rich Attributes" (CVPR 2022). The paper points to the PARA project page hosted on the Institute of Computer Vision dataset site: <https://cv-datasets.institutecv.com/#/data-sets>
+- `LAPIS`: based on Maerten et al., "LAPIS: a novel dataset for personalized image aesthetic assessment" (CVPR Workshops 2025). The official repository and access instructions are here: <https://github.com/Anne-SofieMaerten/LAPIS>
+
+Please make sure your use of each dataset follows the original license, access conditions, and citation requirements from the respective authors.
+
 ## Main Entry Points
 
 Representative commands:
